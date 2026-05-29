@@ -1,0 +1,16 @@
+# Small, light, fast AGV-scale model for the tunnelling stress test.
+#
+# A 0.2 m x 0.2 m box (area 0.04 m^2) at density 1250 kg/m^2 -> ~50 kg, the
+# bottom of the AGV mass range. Small footprint + high speed is the classic
+# tunnelling case: without continuous collision detection a body moving more
+# than its own width per step can pass straight through a thin wall.
+bodies:
+  - name: base
+    pose: [0, 0, 0]
+    type: dynamic
+    color: [0.2, 0.2, 0.9, 0.75]
+    footprints:
+      - type: polygon
+        layers: ["agv"]
+        density: 1250.0
+        points: [[-0.1, -0.1], [0.1, -0.1], [0.1, 0.1], [-0.1, 0.1]]

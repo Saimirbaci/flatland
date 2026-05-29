@@ -21,6 +21,13 @@ Two things were previously nondeterministic and are now seed-driven:
 
 Box2D itself is single-threaded and integrates on a fixed timestep, so the
 physics is already deterministic for a fixed `step_size` and iteration count.
+The contact-solver knobs (`velocity_iterations`, `position_iterations`,
+`substeps`, `continuous_physics`) are part of that fixed configuration: changing
+any of them changes the physics trajectory and therefore the byte-level output,
+so pin them alongside `seed` and `step_size` when comparing runs. `substeps: 1`
+with the default iteration counts reproduces the historical baseline exactly.
+See `flatland_server/doc/contact_solver.md` for the full solver configuration
+and AGV-scale tuning.
 
 ## Parameters
 

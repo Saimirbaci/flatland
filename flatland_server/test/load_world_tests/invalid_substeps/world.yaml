@@ -1,0 +1,6 @@
+# Invalid: substeps must be >= 1. Loading this world must raise a YAMLException.
+properties:
+  substeps: 0
+layers:
+  - name: "agv"
+models: []
