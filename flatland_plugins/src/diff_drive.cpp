@@ -48,6 +48,7 @@
 #include <flatland_plugins/diff_drive.h>
 #include <flatland_server/debug_visualization.h>
 #include <flatland_server/model_plugin.h>
+#include <flatland_server/random.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <geometry_msgs/TwistWithCovarianceStamped.h>
 #include <pluginlib/class_list_macros.h>
@@ -150,9 +151,10 @@ void DiffDrive::OnInitialize(const YAML::Node& config) {
     odom_msg_.pose.covariance[i] = odom_pose_covar[i];
   }
 
-  // init the random number generators
-  std::random_device rd;
-  rng_ = std::default_random_engine(rd());
+  // init the random number generators from the seeded RNG authority so noise is
+  // reproducible for a given run seed (see flatland_server/random.h)
+  rng_ = flatland_server::RngManager::Get().DeriveEngine(GetModel()->GetName() +
+                                                         "/" + GetName());
   for (unsigned int i = 0; i < 3; i++) {
     // variance is standard deviation squared
     noise_gen_[i] =

@@ -55,6 +55,7 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/filesystem/path.hpp>
 #include <boost/lexical_cast.hpp>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 
@@ -65,6 +66,16 @@ namespace flatland_server {
 static const char *kEvalMarker = "$eval";
 static const char *kIncludeMarker = "$include";
 static const char *kSequenceIncludeMarker = "$[include]";
+
+// Deterministic seed for the embedded Lua RNG, set via SetSeed(). Each $eval
+// expression gets a fresh lua_State, so the seed is applied at state creation.
+static uint32_t g_lua_seed = 0;
+static bool g_lua_seeded = false;
+
+void YamlPreprocessor::SetSeed(uint32_t seed) {
+  g_lua_seed = seed;
+  g_lua_seeded = true;
+}
 
 void YamlPreprocessor::Parse(YAML::Node &node, const std::string &ref_path) {
   YamlPreprocessor::ProcessNodes(node, ref_path);
@@ -132,6 +143,13 @@ void YamlPreprocessor::ProcessEvalNode(YAML::Node &node) {
   // Create the Lua context
   lua_State *L = luaL_newstate();
   luaL_openlibs(L);
+  if (g_lua_seeded) {
+    // Seed math.random so $eval expressions are reproducible and controlled by
+    // the run seed (each $eval gets a fresh state, so seed it on creation).
+    std::string seed_cmd =
+        "math.randomseed(" + std::to_string(g_lua_seed) + ")";
+    luaL_dostring(L, seed_cmd.c_str());
+  }
   lua_pushcfunction(L, YamlPreprocessor::LuaGetEnv);
   lua_setglobal(L, "env");
   lua_pushcfunction(L, YamlPreprocessor::LuaGetParam);

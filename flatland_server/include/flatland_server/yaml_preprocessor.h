@@ -53,6 +53,7 @@
 #include <lauxlib.h>
 #include <lua.h>
 #include <lualib.h>
+#include <cstdint>
 #include <set>
 #include <string>
 #include <vector>
@@ -140,6 +141,13 @@ int LuaGetEnv(lua_State *L);
  * @param[in/out] lua_State The lua state/stack to read/write to/from
  */
 int LuaGetParam(lua_State *L);
+
+/**
+ * @brief Deterministically seed the embedded Lua RNG so $eval expressions that
+ * use math.random are reproducible and controlled by the run seed.
+ * @param[in] seed The run seed
+ */
+void SetSeed(uint32_t seed);
 };
 }
 

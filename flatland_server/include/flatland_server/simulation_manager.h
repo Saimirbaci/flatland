@@ -64,6 +64,8 @@ class SimulationManager {
   bool show_viz_;                ///< flag to determine if to show visualization
   double viz_pub_rate_;          ///< rate to publish visualization
   std::string world_yaml_file_;  ///< path to the world file
+  int seed_;                     ///< run seed (<0 = nondeterministic)
+  double real_time_factor_;      ///< wall-clock pacing factor (<=0 = unlimited)
   Timekeeper timekeeper_;        ///< Timekeeper manager
   uint64_t iterations_ = 0;      ///< Main loop iteration count (for debugging/profiling)
 
@@ -74,10 +76,15 @@ class SimulationManager {
    * @param[in] step_size Time to step each iteration
    * @param[in] show_viz if to show visualization
    * @param[in] viz_pub_rate rate to publish visualization
+   * @param[in] seed run seed; <0 means nondeterministic (world YAML
+   *            properties.seed is used as a fallback when this is <0)
+   * @param[in] real_time_factor wall-clock pacing: simulated seconds per real
+   *            second; <=0 runs the loop unthrottled (as fast as possible)
    * behaving ones
    */
   SimulationManager(std::string world_yaml_file, double update_rate,
-                    double step_size, bool show_viz, double viz_pub_rate);
+                    double step_size, bool show_viz, double viz_pub_rate,
+                    int seed = -1, double real_time_factor = 1.0);
 
   /**
    * This method contains the loop that runs the simulation

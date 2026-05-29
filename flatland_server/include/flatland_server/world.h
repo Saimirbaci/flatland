@@ -195,9 +195,12 @@ class World : public b2ContactListener {
    * @brief factory method to create a instance of the world class. Cleans all
    * the inputs before instantiation of the class. TThrows YAMLException.
    * @param[in] yaml_path Path to the world yaml file
+   * @param[in] seed run seed used to deterministically seed all RNG sources
+   *            (plugins, world_random_wall, the Lua preprocessor). <0 means
+   *            nondeterministic, falling back to the world YAML properties.seed.
    * @return pointer to a new world
    */
-  static World *MakeWorld(const std::string &yaml_path);
+  static World *MakeWorld(const std::string &yaml_path, int seed = -1);
 
   /**
    * @brief Publish debug visualizations for everything

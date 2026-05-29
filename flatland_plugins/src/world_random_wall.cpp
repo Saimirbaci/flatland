@@ -47,6 +47,7 @@
 #include <Box2D/Box2D.h>
 #include <flatland_plugins/world_modifier.h>
 #include <flatland_plugins/world_random_wall.h>
+#include <flatland_server/random.h>
 #include <flatland_server/types.h>
 #include <flatland_server/world_plugin.h>
 #include <pluginlib/class_list_macros.h>
@@ -54,6 +55,7 @@
 #include <yaml-cpp/yaml.h>
 #include <algorithm>
 #include <iostream>
+#include <random>
 #include <string>
 
 using namespace flatland_server;
@@ -116,8 +118,12 @@ void RandomWall::OnInitialize(const YAML::Node &config) {
        f = f->GetNext()) {
     Wall_List.push_back(static_cast<b2EdgeShape *>(f->GetShape()));
   }
-  std::srand(std::time(0));
-  std::random_shuffle(Wall_List.begin(), Wall_List.end());
+  // Shuffle deterministically from the seeded RNG authority so the generated
+  // walls are reproducible for a given run seed (see flatland_server/random.h)
+  std::default_random_engine rng =
+      flatland_server::RngManager::Get().DeriveEngine("world_random_wall/" +
+                                                      GetName());
+  std::shuffle(Wall_List.begin(), Wall_List.end(), rng);
   try {
     for (unsigned int i = 0; i < num_of_walls; i++) {
       modifier.AddFullWall(Wall_List[i]);

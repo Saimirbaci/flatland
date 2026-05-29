@@ -48,6 +48,7 @@
 #include <flatland_plugins/imu.h>
 #include <flatland_server/debug_visualization.h>
 #include <flatland_server/model_plugin.h>
+#include <flatland_server/random.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <pluginlib/class_list_macros.h>
 #include <ros/ros.h>
@@ -132,9 +133,10 @@ void Imu::OnInitialize(const YAML::Node& config) {
     imu_msg_.linear_acceleration_covariance[i] = linear_acceleration_covar[i];
   }
 
-  // init the random number generators
-  std::random_device rd;
-  rng_ = std::default_random_engine(rd());
+  // init the random number generators from the seeded RNG authority so noise is
+  // reproducible for a given run seed (see flatland_server/random.h)
+  rng_ = flatland_server::RngManager::Get().DeriveEngine(GetModel()->GetName() +
+                                                         "/" + GetName());
   for (int i = 0; i < 3; i++) {
     // variance is standard deviation squared
     noise_gen_[i] =

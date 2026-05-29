@@ -48,6 +48,7 @@
 #include <flatland_server/collision_filter_registry.h>
 #include <flatland_server/exceptions.h>
 #include <flatland_server/model_plugin.h>
+#include <flatland_server/random.h>
 #include <flatland_server/yaml_reader.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <pluginlib/class_list_macros.h>
@@ -352,9 +353,10 @@ void Laser::ParseParameters(const YAML::Node& config) {
   reflectance_layers_bits_ =
       GetModel()->GetCfr()->GetCategoryBits(reflectance_layer, &invalid_layers);
 
-  // init the random number generators
-  std::random_device rd;
-  rng_ = std::default_random_engine(rd());
+  // init the random number generators from the seeded RNG authority so noise is
+  // reproducible for a given run seed (see flatland_server/random.h)
+  rng_ = flatland_server::RngManager::Get().DeriveEngine(GetModel()->GetName() +
+                                                         "/" + GetName());
   noise_gen_ = std::normal_distribution<float>(0.0, noise_std_dev_);
 
   ROS_INFO(  //"LaserPlugin",
