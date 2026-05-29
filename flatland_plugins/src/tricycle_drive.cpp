@@ -48,6 +48,7 @@
 #include <flatland_plugins/tricycle_drive.h>
 #include <flatland_server/debug_visualization.h>
 #include <flatland_server/model_plugin.h>
+#include <flatland_server/random.h>
 #include <flatland_server/yaml_reader.h>
 #include <pluginlib/class_list_macros.h>
 #include <ros/ros.h>
@@ -171,9 +172,10 @@ void TricycleDrive::OnInitialize(const YAML::Node& config) {
     odom_msg_.pose.covariance[i] = odom_pose_covar[i];
   }
 
-  // init the random number generators
-  random_device rd;
-  rng_ = default_random_engine(rd());
+  // init the random number generators from the seeded RNG authority so noise is
+  // reproducible for a given run seed (see flatland_server/random.h)
+  rng_ = flatland_server::RngManager::Get().DeriveEngine(GetModel()->GetName() +
+                                                         "/" + GetName());
   for (unsigned int i = 0; i < 3; i++) {
     // variance is standard deviation squared
     noise_gen_[i] = normal_distribution<double>(0.0, sqrt(odom_pose_noise[i]));

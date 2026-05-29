@@ -106,6 +106,7 @@ add_library(flatland_lib
   src/dummy_model_plugin.cpp 
   src/dummy_world_plugin.cpp
   src/yaml_preprocessor.cpp
+  src/random.cpp
 )
 
 add_dependencies(flatland_lib ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -260,10 +261,20 @@ if(CATKIN_ENABLE_TESTING)
                         flatland_lib yaml-cpp) 
 
   add_rostest_gtest(yaml_preprocessor_test
-                    test/yaml_preprocessor/yaml_preprocessor_test.test 
-                    test/yaml_preprocessor/yaml_preprocessor_test.cpp) 
+                    test/yaml_preprocessor/yaml_preprocessor_test.test
+                    test/yaml_preprocessor/yaml_preprocessor_test.cpp)
   target_link_libraries(yaml_preprocessor_test
                         flatland_lib yaml-cpp)
+
+  catkin_add_gtest(random_test test/random_test.cpp)
+  target_link_libraries(random_test
+    flatland_lib)
+
+  add_rostest_gtest(determinism_test
+    test/determinism_test.test
+    test/determinism_test.cpp)
+  target_link_libraries(determinism_test
+    flatland_lib)
 
 
 endif()

@@ -115,9 +115,16 @@ int main(int argc, char **argv) {
 
   node_handle.getParam("benchmark_duration", benchmark_duration);
 
-  // Create simulation manager object
+  // Run seed: <0 (default) means nondeterministic, falling back to the world
+  // YAML properties.seed if present; any value >=0 makes the run reproducible.
+  int seed = -1;
+  node_handle.getParam("seed", seed);
+
+  // Create simulation manager object. The benchmark always runs unthrottled
+  // (real_time_factor <= 0) so it measures raw stepping throughput, but it still
+  // honors the seed so benchmarks can be reproduced.
   simulation_manager = new flatland_server::SimulationManager(
-      world_path, update_rate, step_size, show_viz, viz_pub_rate);
+      world_path, update_rate, step_size, show_viz, viz_pub_rate, seed, 0.0);
 
   // Register sigint shutdown handler
   signal(SIGINT, SigintHandler);

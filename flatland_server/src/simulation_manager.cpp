@@ -61,18 +61,23 @@ namespace flatland_server {
 
 SimulationManager::SimulationManager(std::string world_yaml_file,
                                      double update_rate, double step_size,
-                                     bool show_viz, double viz_pub_rate)
+                                     bool show_viz, double viz_pub_rate,
+                                     int seed, double real_time_factor)
     : world_(nullptr),
       update_rate_(update_rate),
       step_size_(step_size),
       show_viz_(show_viz),
       viz_pub_rate_(viz_pub_rate),
-      world_yaml_file_(world_yaml_file) {
+      world_yaml_file_(world_yaml_file),
+      seed_(seed),
+      real_time_factor_(real_time_factor) {
   ROS_INFO_NAMED("SimMan",
                  "Simulation params: world_yaml_file(%s) update_rate(%f), "
-                 "step_size(%f) show_viz(%s), viz_pub_rate(%f)",
+                 "step_size(%f) show_viz(%s), viz_pub_rate(%f) seed(%d) "
+                 "real_time_factor(%f)",
                  world_yaml_file_.c_str(), update_rate_, step_size_,
-                 show_viz_ ? "true" : "false", viz_pub_rate_);
+                 show_viz_ ? "true" : "false", viz_pub_rate_, seed_,
+                 real_time_factor_);
 }
 
 void SimulationManager::Main(bool benchmark) {
@@ -80,7 +85,7 @@ void SimulationManager::Main(bool benchmark) {
   run_simulator_ = true;
 
   try {
-    world_ = World::MakeWorld(world_yaml_file_);
+    world_ = World::MakeWorld(world_yaml_file_, seed_);
     ROS_INFO_NAMED("SimMan", "World loaded");
   } catch (const std::exception& e) {
     ROS_FATAL_NAMED("SimMan", "%s", e.what());
@@ -96,35 +101,41 @@ void SimulationManager::Main(bool benchmark) {
   double viz_update_period = 1.0f / viz_pub_rate_;
   ServiceManager service_manager(this, world_);
 
-  // ros::WallDuration(1.0).sleep(); // sleep for one second to allow world/plugins to init
+  timekeeper_.SetMaxStepSize(step_size_);
+
+  // Pacing is decoupled from physics: physics always advances by exactly one
+  // fixed step_size per iteration, while wall-clock speed is governed only by
+  // real_time_factor. Target wall time per step = step_size / real_time_factor.
+  // real_time_factor <= 0 (or benchmark) runs unthrottled (no sleeping), so the
+  // host speed never affects the simulated result or message timestamps.
+  bool throttle = (real_time_factor_ > 0.0) && (benchmark == false);
+  std::chrono::duration<double> expected_cycle_time(
+      throttle ? step_size_ / real_time_factor_ : 0.0);
 
   // integrated ros::WallRate logic here to expose internals for benchmarking
   std::chrono::duration<double> start = std::chrono::steady_clock::now().time_since_epoch();
-  std::chrono::duration<double> expected_cycle_time(1.0/update_rate_);
   std::chrono::duration<double> actual_cycle_time(0.0);
   using seconds_d = std::chrono::duration<double, std::ratio<1, 1>>;
   double seconds_taken = 0;
 
-  timekeeper_.SetMaxStepSize(step_size_);
-  ROS_INFO_NAMED("SimMan", "Simulation loop started");
+  // Visualization cadence is driven off simulated time (not wall time) so the
+  // published output is identical regardless of how fast the host runs.
+  double last_viz_sim_time = -std::numeric_limits<double>::infinity();
+
+  ROS_INFO_NAMED("SimMan",
+                 "Simulation loop started (real_time_factor=%.3f%s)",
+                 real_time_factor_, throttle ? "" : ", unthrottled");
 
   while (ros::ok() && run_simulator_) {
-    // for updating visualization at a given rate
-    // see flatland_plugins/update_timer.cpp for this formula
-    double f = 0.0;
-    try {
-      f = fmod(ros::Time::now().toSec() +
-                   (expected_cycle_time.count() / 2.0),
-               viz_update_period);
-    } catch (std::runtime_error& ex) {
-      ROS_ERROR("Flatland runtime error: [%s]", ex.what());
-    }
     std::chrono::duration<double> update_start = std::chrono::steady_clock::now().time_since_epoch();
-    bool update_viz = ((f >= 0.0) && (f < expected_cycle_time.count()));
 
-    world_->Update(timekeeper_);  // Step physics by ros cycle time
+    world_->Update(timekeeper_);  // Step physics by one fixed step_size
 
-    if (show_viz_ && update_viz) {
+    double sim_time = timekeeper_.GetSimTime().toSec();
+    bool update_viz =
+        show_viz_ && (sim_time - last_viz_sim_time >= viz_update_period);
+    if (update_viz) {
+      last_viz_sim_time = sim_time;
       world_->DebugVisualize(false);  // no need to update layer
       DebugVisualization::Get().Publish(
           timekeeper_);  // publish debug visualization
@@ -134,37 +145,38 @@ void SimulationManager::Main(bool benchmark) {
 
     seconds_taken += (seconds_d(std::chrono::steady_clock::now().time_since_epoch()) - update_start).count();
 
-    // ros::WallRate::sleep() logic, but using std::chrono time
+    // Pace to the real-time factor, unless running unthrottled. This only
+    // affects wall-clock timing, never the number of physics steps.
     {
       std::chrono::duration<double> expected_end = start + expected_cycle_time;
       std::chrono::duration<double> actual_end = std::chrono::steady_clock::now().time_since_epoch();
-      std::chrono::duration<double> sleep_time = expected_end - actual_end;  //calculate the time we'll sleep for
+      std::chrono::duration<double> sleep_time = expected_end - actual_end;
       actual_cycle_time = actual_end - start;
-      start = expected_end;  //make sure to reset our start time
-      // ROS_INFO_NAMED(
-      //   "SimMan", "actual_end: %f, start: %f, actual: %f", 
-      //   seconds_d(actual_end).count(), 
-      //   seconds_d(start).count(), 
-      //   seconds_d(actual_cycle_time).count());
-      if(sleep_time.count() <= 0.0) { //if we've taken too much time we won't sleep
+      start = expected_end;  // make sure to reset our start time
+      if (!throttle) {
+        start = actual_end;  // no pacing target, just track elapsed time
+      } else if (sleep_time.count() <= 0.0) {
+        // we've taken too long; don't sleep, and resync if we're far behind
         if (actual_end > expected_end + expected_cycle_time) {
           start = actual_end;
         }
-      } else {  // sleep, unless we're in a benchmark
-        if (benchmark == false) {   // if benchmark==true, skip sleeping to run as fast as possible
-          std::this_thread::sleep_for(sleep_time);
-        } else {
-          start = actual_end;
-        }
+      } else {
+        std::this_thread::sleep_for(sleep_time);
       }
     }
 
     iterations_++;
 
+    // Utilization: wall time spent per step vs. the per-step budget. When
+    // unthrottled the budget is the step itself, so factor = sim/wall speedup.
     double cycle_time = actual_cycle_time.count() * 1000;
-    double expected_cycle_time_ms = expected_cycle_time.count() * 1000;
-    double cycle_util = cycle_time / expected_cycle_time_ms * 100;  // in percent
-    double factor = timekeeper_.GetStepSize() * 1000 / expected_cycle_time_ms;
+    double budget_ms =
+        (throttle ? expected_cycle_time.count() : step_size_) * 1000;
+    double cycle_util = budget_ms > 0.0 ? cycle_time / budget_ms * 100 : 0.0;
+    double factor = real_time_factor_;
+    if (!throttle) {
+      factor = cycle_time > 0.0 ? step_size_ * 1000 / cycle_time : 0.0;
+    }
     min_cycle_util = std::min(cycle_util, min_cycle_util);
     if (iterations_ > 10) max_cycle_util = std::max(cycle_util, max_cycle_util);
     filtered_cycle_util = 0.99 * filtered_cycle_util + 0.01 * cycle_util;

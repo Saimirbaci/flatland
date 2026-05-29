@@ -8,6 +8,8 @@
   <arg name="update_rate" default="200.0"/>
   <arg name="step_size" default="0.005"/>
   <arg name="benchmark_duration" default="60.0"/>
+  <!-- seed: -1 = nondeterministic (falls back to world properties.seed); >=0 = reproducible -->
+  <arg name="seed" default="-1"/>
   <arg name="use_perf" default="false" />
   <arg name="show_viz" default="true" />
   <arg name="simplify_map" default="2" />  <!-- 0=None, 1=moderately, 2=significantly-->
@@ -28,6 +30,7 @@
     <param name="show_viz" value="$(arg show_viz)" />
     <param name="benchmark_duration" value="$(arg benchmark_duration)" />
     <param name="simplify_map" value="$(arg simplify_map)" />
+    <param name="seed" value="$(arg seed)" />
   </node>
 
 </launch>

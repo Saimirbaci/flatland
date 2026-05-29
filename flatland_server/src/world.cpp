@@ -47,13 +47,17 @@
 #include <Box2D/Box2D.h>
 #include <flatland_server/debug_visualization.h>
 #include <flatland_server/exceptions.h>
+#include <flatland_server/random.h>
 #include <flatland_server/types.h>
 #include <flatland_server/world.h>
+#include <flatland_server/yaml_preprocessor.h>
 #include <flatland_server/yaml_reader.h>
 #include <ros/ros.h>
 #include <yaml-cpp/yaml.h>
 #include <boost/filesystem.hpp>
+#include <cstdlib>
 #include <map>
+#include <random>
 #include <string>
 
 namespace flatland_server {
@@ -125,12 +129,53 @@ void World::PostSolve(b2Contact *contact, const b2ContactImpulse *impulse) {
   plugin_manager_.PostSolve(contact, impulse);
 }
 
-World *World::MakeWorld(const std::string &yaml_path) {
+// Resolve and apply the run seed to every RNG source in the simulator. A
+// negative request means "nondeterministic": a fresh seed is drawn from
+// std::random_device and logged so the run can still be replayed. The resolved
+// seed is fed to the RngManager (plugins), the legacy C RNG (world_random_wall),
+// and the Lua preprocessor ($eval math.random).
+static void SeedSimulation(int requested) {
+  uint32_t effective;
+  if (requested < 0) {
+    std::random_device rd;
+    effective = rd();
+    ROS_INFO_NAMED("World",
+                   "No seed provided; using nondeterministic seed %u. Set the "
+                   "'seed' param or world properties.seed to reproduce.",
+                   effective);
+  } else {
+    effective = static_cast<uint32_t>(requested);
+    ROS_INFO_NAMED("World", "Using deterministic seed %u", effective);
+  }
+  RngManager::Get().Seed(effective);
+  std::srand(effective);
+  YamlPreprocessor::SetSeed(effective);
+}
+
+World *World::MakeWorld(const std::string &yaml_path, int seed) {
+  // Apply the seed as early as possible (before the world YAML is preprocessed)
+  // when given on the node param, so even world-level $eval expressions are
+  // reproducible. With no node-param seed we defer until properties are parsed
+  // so we can honor properties.seed.
+  if (seed >= 0) {
+    SeedSimulation(seed);
+  }
+
   YamlReader world_reader = YamlReader(yaml_path);
   YamlReader prop_reader = world_reader.Subnode("properties", YamlReader::MAP);
   int v = prop_reader.Get<int>("velocity_iterations", 10);
   int p = prop_reader.Get<int>("position_iterations", 10);
+  // Read (and thus "access") the optional seed so EnsureAccessedAllKeys() is
+  // happy; node-param seed takes precedence over this YAML value.
+  int yaml_seed = prop_reader.Get<int>("seed", -1);
   prop_reader.EnsureAccessedAllKeys();
+
+  // node-param seed wins; otherwise fall back to properties.seed (and finally a
+  // nondeterministic seed). Seeded before any model/plugin loads so plugin noise
+  // and model-file $eval are reproducible.
+  if (seed < 0) {
+    SeedSimulation(yaml_seed);
+  }
 
   World *w = new World();
 

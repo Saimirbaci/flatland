@@ -98,9 +98,19 @@ int main(int argc, char **argv) {
   float viz_pub_rate = 30.0;
   node_handle.getParam("viz_pub_rate", viz_pub_rate);
 
+  // Run seed: <0 (default) means nondeterministic, falling back to the world
+  // YAML properties.seed if present; any value >=0 makes the run reproducible.
+  int seed = -1;
+  node_handle.getParam("seed", seed);
+
+  // Wall-clock pacing: simulated seconds per real second. <=0 runs unthrottled.
+  double real_time_factor = 1.0;
+  node_handle.getParam("real_time_factor", real_time_factor);
+
   // Create simulation manager object
   simulation_manager = new flatland_server::SimulationManager(
-      world_path, update_rate, step_size, show_viz, viz_pub_rate);
+      world_path, update_rate, step_size, show_viz, viz_pub_rate, seed,
+      real_time_factor);
 
   // Register sigint shutdown handler
   signal(SIGINT, SigintHandler);
