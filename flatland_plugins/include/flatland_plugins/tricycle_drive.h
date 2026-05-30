@@ -47,6 +47,7 @@
 #include <Box2D/Box2D.h>
 #include <flatland_plugins/update_timer.h>
 #include <flatland_plugins/dynamics_limits.h>
+#include <flatland_plugins/wheel_friction_model.h>
 #include <flatland_server/model_plugin.h>
 #include <flatland_server/timekeeper.h>
 #include <geometry_msgs/Twist.h>
@@ -70,10 +71,16 @@ class TricycleDrive : public flatland_server::ModelPlugin {
   double axel_track_;     ///< normal distrance between the rear two wheels
   double wheelbase_;      ///< distance between the front and rear wheel
   b2Vec2 rear_center_;    ///< middle point between the two rear wheels
+  b2Vec2 rear_left_anchor_;   ///< rear left wheel contact point (body frame)
+  b2Vec2 rear_right_anchor_;  ///< rear right wheel contact point (body frame)
   bool invert_steering_angle_;     ///< whether to invert steering angle
   double max_steer_angle_;         ///< max abs. steering allowed [rad]
   DynamicsLimits angular_dynamics_; ///< Angular dynamics constraints
   DynamicsLimits linear_dynamics_;  ///< Linear dynamics constraints
+
+  WheelFrictionModel wheel_friction_;  ///< Anisotropic wheel-ground friction model
+  bool use_friction_drive_ = false;    ///< drive_mode: friction (force-based) vs
+                                       /// kinematic (default, SetLinearVelocity)
   double delta_command_;  ///< The current target (commanded) wheel angle
   double theta_f_;        ///< The current angular offset of the front wheel
   double d_delta_;        ///< The current angular speed of the front wheel
@@ -122,6 +129,20 @@ class TricycleDrive : public flatland_server::ModelPlugin {
    *            http://ai.stanford.edu/~gabeh/papers/hoffmann_stanley_control07.pdf
    */
   void BeforePhysicsStep(const Timekeeper& timekeeper) override;
+
+  /**
+   * @name          ApplyFrictionDrive
+   * @brief         Apply slip-limited traction forces at the three wheels
+   * @details       Force-based alternative to the kinematic SetLinearVelocity
+   *                path. The steered front wheel is driven at v_f_ along its
+   *                pointing direction (theta_f_); the two rear wheels are
+   *                rolling-constrained (longitudinally free, laterally gripped).
+   *                Each wheel's anisotropic Coulomb friction force comes from
+   *                wheel_friction_.
+   * @param[in]     b2body The model body to drive
+   * @param[in]     dt     The physics timestep [s]
+   */
+  void ApplyFrictionDrive(b2Body* b2body, double dt);
 
   /**
   * @name          TwistCallback

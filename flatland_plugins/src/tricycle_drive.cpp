@@ -117,6 +117,20 @@ void TricycleDrive::OnInitialize(const YAML::Node& config) {
   // Linear dynamics constraints
   linear_dynamics_.Configure(r.SubnodeOpt("linear_dynamics", YamlReader::MAP).Node());
 
+  // Drive mode: "kinematic" (default, ideal SetLinearVelocity) keeps existing
+  // worlds unchanged; "friction"/"dynamic" engages the force-based traction
+  // path bounded by the anisotropic wheel-ground friction model.
+  string drive_mode = r.Get<string>("drive_mode", "kinematic");
+  use_friction_drive_ = (drive_mode == "friction" || drive_mode == "dynamic");
+  if (!use_friction_drive_ && drive_mode != "kinematic") {
+    throw YAMLException("Invalid drive_mode " + Q(drive_mode) +
+                        ", supported modes are: kinematic, friction");
+  }
+
+  // Wheel-ground friction model (only used when drive_mode == friction)
+  wheel_friction_.Configure(
+      r.SubnodeOpt("wheel_friction", YamlReader::MAP).Node());
+
   delta_command_ = 0.0;
   theta_f_ = 0.0;
   d_delta_ = 0.0;
@@ -261,6 +275,11 @@ void TricycleDrive::ComputeJoints() {
   b2Vec2 front_anchor = get_anchor(front_wj_, &invert_steering_angle_);
   b2Vec2 rear_left_anchor = get_anchor(rear_left_wj_);
   b2Vec2 rear_right_anchor = get_anchor(rear_right_wj_);
+
+  // cache the rear wheel contact points (body frame) for the friction model;
+  // the front wheel contacts at the body origin (asserted to be (0,0) below)
+  rear_left_anchor_ = rear_left_anchor;
+  rear_right_anchor_ = rear_right_anchor;
 
   // the front wheel must be at (0,0) of the body
   if (fabs(front_anchor.x) > 1e-5 || fabs(front_anchor.y) > 1e-5) {
@@ -418,28 +437,83 @@ void TricycleDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
   // apply linear velocity and acceleration constraints
   v_f_ = linear_dynamics_.Limit(v_f_, twist_msg_.linear.x, dt);
 
-  double v_x = v_f_ * cos(theta_f_) * cos(theta);  // x velocity in world
-  double v_y = v_f_ * cos(theta_f_) * sin(theta);  // y velocity in world
-  double w = v_f_ * sin(theta_f_) / wheelbase_;    // angular velocity
+  if (use_friction_drive_) {
+    // Force-based traction: drive the front wheel and let the rear rolling
+    // constraints + Box2D solver integrate the body, allowing real slip.
+    ApplyFrictionDrive(b2body, dt);
+  } else {
+    double v_x = v_f_ * cos(theta_f_) * cos(theta);  // x velocity in world
+    double v_y = v_f_ * cos(theta_f_) * sin(theta);  // y velocity in world
+    double w = v_f_ * sin(theta_f_) / wheelbase_;    // angular velocity
 
-  // Now we would like the rear center to move at v_x, v_y, and w, since Box2D
-  // applies velocities at center of mass, we must use rigid body kinematics
-  // to transform the velocities
-  b2Vec2 linear_vel(v_x, v_y);
+    // Now we would like the rear center to move at v_x, v_y, and w, since Box2D
+    // applies velocities at center of mass, we must use rigid body kinematics
+    // to transform the velocities
+    b2Vec2 linear_vel(v_x, v_y);
 
-  // V_cm = V_rc + W x r_cm/rc
-  // velocity at center of mass equals to the velocity at the rear center plus,
-  // angular velocity cross product the displacement from the rear center to the
-  // center of mass
+    // V_cm = V_rc + W x r_cm/rc
+    // velocity at center of mass equals to the velocity at the rear center
+    // plus, angular velocity cross product the displacement from the rear
+    // center to the center of mass
 
-  // r is the vector from rear center to CM in world frame
-  b2Vec2 r = b2body->GetWorldCenter() - b2body->GetWorldPoint(rear_center_);
-  b2Vec2 linear_vel_cm = linear_vel + w * b2Vec2(-r.y, r.x);
+    // r is the vector from rear center to CM in world frame
+    b2Vec2 r = b2body->GetWorldCenter() - b2body->GetWorldPoint(rear_center_);
+    b2Vec2 linear_vel_cm = linear_vel + w * b2Vec2(-r.y, r.x);
 
-  b2body->SetLinearVelocity(linear_vel_cm);
+    b2body->SetLinearVelocity(linear_vel_cm);
 
-  // angular velocity is the same at any point in body
-  b2body->SetAngularVelocity(w);
+    // angular velocity is the same at any point in body
+    b2body->SetAngularVelocity(w);
+  }
+}
+
+void TricycleDrive::ApplyFrictionDrive(b2Body* b2body, double dt) {
+  // Normal load split evenly across the three wheels (front + two rear). A
+  // geometry-weighted or z-load split is left to the 2.5D contact backlog task.
+  double normal_load = b2body->GetMass() * WheelFrictionModel::kGravity / 3.0;
+
+  // --- Front wheel: steered and driven at v_f_ along its pointing direction --
+  // The front wheel contacts at the body origin (asserted in ComputeJoints).
+  // Its heading in the body frame is theta_f_ (the same convention the
+  // kinematic model uses); invert_steering_angle_ only flips the joint
+  // visualization, not the physical steering direction.
+  double cos_d = cos(theta_f_);
+  double sin_d = sin(theta_f_);
+  b2Vec2 front_long_axis =
+      b2body->GetWorldVector(b2Vec2(cos_d, sin_d));   // rolling direction
+  b2Vec2 front_lat_axis =
+      b2body->GetWorldVector(b2Vec2(-sin_d, cos_d));  // side-slip direction
+
+  b2Vec2 front_local(0.0f, 0.0f);
+  b2Vec2 front_vel = b2body->GetLinearVelocityFromLocalPoint(front_local);
+  double front_actual_long = b2Dot(front_vel, front_long_axis);
+  double front_actual_lat = b2Dot(front_vel, front_lat_axis);
+
+  double front_slip_long = v_f_ - front_actual_long;
+  double front_slip_lat = 0.0 - front_actual_lat;
+
+  b2Vec2 front_force = wheel_friction_.ComputeWheelForce(
+      front_slip_long, front_slip_lat, normal_load, dt);
+  b2Vec2 front_force_world =
+      front_force.x * front_long_axis + front_force.y * front_lat_axis;
+  b2body->ApplyForce(front_force_world, b2body->GetWorldPoint(front_local),
+                     true);
+
+  // --- Rear wheels: passive rolling, longitudinally free, laterally gripped --
+  // They point along the body x-axis; only side-slip (body y) is resisted.
+  const b2Vec2 rear_anchors[2] = {rear_left_anchor_, rear_right_anchor_};
+  for (int i = 0; i < 2; i++) {
+    b2Vec2 vel_world = b2body->GetLinearVelocityFromLocalPoint(rear_anchors[i]);
+    b2Vec2 vel_local = b2body->GetLocalVector(vel_world);
+
+    // Rolling constraint: no commanded longitudinal drive (slip_long = 0),
+    // resist the lateral component of the contact velocity.
+    b2Vec2 force_local =
+        wheel_friction_.ComputeWheelForce(0.0, -vel_local.y, normal_load, dt);
+    b2Vec2 force_world = b2body->GetWorldVector(force_local);
+    b2body->ApplyForce(force_world, b2body->GetWorldPoint(rear_anchors[i]),
+                       true);
+  }
 }
 
 void TricycleDrive::TwistCallback(const geometry_msgs::Twist& msg) {

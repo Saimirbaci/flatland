@@ -1,0 +1,94 @@
+# Tricycle robot with force-based (friction) traction enabled. Geometry matches
+# cleaner.model.yaml; only the drive plugin's drive_mode + wheel_friction block
+# differ so the slip-limited traction path is exercised end-to-end.
+
+bodies:
+  - name: base
+    type: dynamic
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 100
+        points: [ [-1.03, -0.337],
+                  [.07983, -0.337],
+                  [.30, -.16111],
+                  [.30, .16111],
+                  [.07983, 0.337],
+                  [-1.03, 0.337] ]
+  - name: front_wheel
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 1.0
+        points: [[ 0.0875, -0.0250],
+                 [ 0.0875,  0.0250],
+                 [-0.0875, 0.0250],
+                 [-0.0875, -0.0250]]
+
+  - name: rear_left_wheel
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 1.0
+        points: [[ 0.0875, -0.0255],
+                 [ 0.0875,  0.0255],
+                 [-0.0875, 0.0255],
+                 [-0.0875, -0.0255]]
+
+  - name: rear_right_wheel
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 1.0
+        points: [[ 0.0875, -0.0255],
+                 [ 0.0875,  0.0255],
+                 [-0.0875, 0.0255],
+                 [-0.0875, -0.0255]]
+
+joints:
+  - type: revolute
+    name: front_wheel_revolute
+    bodies:
+      - name: front_wheel
+        anchor: [0, 0]
+      - name: base
+        anchor: [0, 0]
+
+  - type: weld
+    name: rear_right_wheel_weld
+    bodies:
+      - name: rear_left_wheel
+        anchor: [0, 0]
+      - name: base
+        anchor: [-0.83, 0.29]
+
+  - type: weld
+    name: rear_left_wheel_weld
+    bodies:
+      - name: rear_right_wheel
+        anchor: [0, 0]
+      - name: base
+        anchor: [-0.83, -0.29]
+
+plugins:
+  - type: TricycleDrive
+    name: cleaner_drive
+    body: base
+    front_wheel_joint: front_wheel_revolute
+    rear_left_wheel_joint: rear_left_wheel_weld
+    rear_right_wheel_joint: rear_right_wheel_weld
+    odom_frame_id: map
+    # Force-based traction: the front wheel drives and steers, the rear wheels
+    # are rolling-constrained; all three are bounded by anisotropic friction.
+    drive_mode: friction
+    wheel_friction:
+      enabled: true
+      mu_long_static: 1.0
+      mu_long_kinetic: 0.8
+      mu_lat_static: 1.2
+      mu_lat_kinetic: 1.0
+      static_slip_threshold: 0.05
+
+  - type: ModelTfPublisher
+    name: tf_publisher
+    publish_tf_world: true

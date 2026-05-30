@@ -46,11 +46,40 @@
 
 #include <flatland_plugins/diff_drive.h>
 #include <flatland_server/model_plugin.h>
+#include <flatland_server/timekeeper.h>
+#include <flatland_server/world.h>
+#include <geometry_msgs/Twist.h>
+#include <nav_msgs/Odometry.h>
 #include <gtest/gtest.h>
 #include <pluginlib/class_loader.h>
 #include <ros/ros.h>
 
-TEST(DiffDrivePluginTest, load_test) {
+namespace fs = boost::filesystem;
+using namespace flatland_server;
+using namespace flatland_plugins;
+
+class DiffDrivePluginTest : public ::testing::Test {
+ public:
+  boost::filesystem::path this_file_dir;
+  boost::filesystem::path world_yaml;
+  nav_msgs::Odometry odom;
+  World* w;
+
+  void SetUp() override {
+    this_file_dir = boost::filesystem::path(__FILE__).parent_path();
+    w = nullptr;
+  }
+
+  void TearDown() override {
+    if (w != nullptr) {
+      delete w;
+    }
+  }
+
+  void GroundTruthSubscriberCB(const nav_msgs::Odometry& msg) { odom = msg; }
+};
+
+TEST_F(DiffDrivePluginTest, load_test) {
   pluginlib::ClassLoader<flatland_server::ModelPlugin> loader(
       "flatland_server", "flatland_server::ModelPlugin");
 
@@ -60,6 +89,97 @@ TEST(DiffDrivePluginTest, load_test) {
   } catch (pluginlib::PluginlibException& e) {
     FAIL() << "Failed to load diff drive Drive plugin. " << e.what();
   }
+}
+
+// Force-based (friction) traction: commanding forward velocity should drive the
+// robot forward through the wheel-ground friction model. The velocity ramps up
+// under the bounded traction force (force-limited) rather than jumping to the
+// command in a single step the way the ideal kinematic path does.
+TEST_F(DiffDrivePluginTest, friction_drive_forward) {
+  world_yaml = this_file_dir / fs::path("diff_drive_tests/world.yaml");
+
+  Timekeeper timekeeper;
+  timekeeper.SetMaxStepSize(0.01);
+  w = World::MakeWorld(world_yaml.string());
+
+  ros::NodeHandle nh;
+  ros::Subscriber sub_1;
+  DiffDrivePluginTest* obj = dynamic_cast<DiffDrivePluginTest*>(this);
+  sub_1 = nh.subscribe("odometry/ground_truth", 1, &DiffDrivePluginTest::GroundTruthSubscriberCB, obj);
+
+  DiffDrive* dd =
+      dynamic_cast<DiffDrive*>(w->plugin_manager_.model_plugins_[0].get());
+  ASSERT_NE(nullptr, dd);
+  EXPECT_TRUE(dd->use_friction_drive_);
+
+  // Let things settle at rest
+  for (unsigned int i = 0; i < 100; i++) {
+    w->Update(timekeeper);
+    ros::spinOnce();
+  }
+  EXPECT_NEAR(0, odom.twist.twist.linear.x, 0.01);
+  EXPECT_NEAR(0, odom.pose.pose.position.x, 0.01);
+
+  geometry_msgs::Twist cmd_vel;
+  cmd_vel.linear.x = 0.5;  // m/s
+  cmd_vel.angular.z = 0.0;
+  dd->TwistCallback(cmd_vel);
+
+  // Traction is force-limited: after a couple of steps the body is moving but
+  // has not reached the command (the kinematic path would jump there at once).
+  for (unsigned int i = 0; i < 2; i++) {
+    w->Update(timekeeper);
+    ros::spinOnce();
+  }
+  EXPECT_GT(odom.twist.twist.linear.x, 0.0);
+  EXPECT_LT(odom.twist.twist.linear.x, 0.5);
+
+  // With enough time the high-grip wheels reach the commanded velocity
+  for (unsigned int i = 0; i < 200; i++) {
+    w->Update(timekeeper);
+    ros::spinOnce();
+  }
+  EXPECT_NEAR(0.5, odom.twist.twist.linear.x, 0.05);  // tracks command
+  EXPECT_GT(odom.pose.pose.position.x, 0.2);          // drove forward
+  EXPECT_NEAR(0.0, odom.pose.pose.position.y, 0.05);  // bounded side-slip
+}
+
+// Friction traction must still turn: a pure angular command produces body yaw
+// via the differential of the two wheels' longitudinal traction forces.
+TEST_F(DiffDrivePluginTest, friction_drive_rotate) {
+  world_yaml = this_file_dir / fs::path("diff_drive_tests/world.yaml");
+
+  Timekeeper timekeeper;
+  timekeeper.SetMaxStepSize(0.01);
+  w = World::MakeWorld(world_yaml.string());
+
+  ros::NodeHandle nh;
+  ros::Subscriber sub_1;
+  DiffDrivePluginTest* obj = dynamic_cast<DiffDrivePluginTest*>(this);
+  sub_1 = nh.subscribe("odometry/ground_truth", 1, &DiffDrivePluginTest::GroundTruthSubscriberCB, obj);
+
+  DiffDrive* dd =
+      dynamic_cast<DiffDrive*>(w->plugin_manager_.model_plugins_[0].get());
+  ASSERT_NE(nullptr, dd);
+
+  for (unsigned int i = 0; i < 100; i++) {
+    w->Update(timekeeper);
+    ros::spinOnce();
+  }
+
+  geometry_msgs::Twist cmd_vel;
+  cmd_vel.linear.x = 0.0;
+  cmd_vel.angular.z = 0.5;  // rad/s
+  dd->TwistCallback(cmd_vel);
+  for (unsigned int i = 0; i < 200; i++) {
+    w->Update(timekeeper);
+    ros::spinOnce();
+  }
+
+  // rotating in place: yawing, with the body roughly holding position
+  EXPECT_GT(odom.twist.twist.angular.z, 0.1);
+  EXPECT_NEAR(0.0, odom.pose.pose.position.x, 0.1);
+  EXPECT_NEAR(0.0, odom.pose.pose.position.y, 0.1);
 }
 
 // Run all the tests that were declared with TEST()

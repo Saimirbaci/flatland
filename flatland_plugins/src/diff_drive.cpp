@@ -96,6 +96,28 @@ void DiffDrive::OnInitialize(const YAML::Node& config) {
   // Linear dynamics constraints
   linear_dynamics_.Configure(reader.SubnodeOpt("linear_dynamics", YamlReader::MAP).Node());
 
+  // Drive mode: "kinematic" (default, ideal SetLinearVelocity) keeps existing
+  // worlds unchanged; "friction"/"dynamic" engages the force-based traction
+  // path bounded by the anisotropic wheel-ground friction model.
+  std::string drive_mode = reader.Get<std::string>("drive_mode", "kinematic");
+  use_friction_drive_ = (drive_mode == "friction" || drive_mode == "dynamic");
+  if (!use_friction_drive_ && drive_mode != "kinematic") {
+    throw YAMLException("Invalid drive_mode " + Q(drive_mode) +
+                        ", supported modes are: kinematic, friction");
+  }
+
+  // Wheel-ground friction model (only used when drive_mode == friction)
+  wheel_friction_.Configure(
+      reader.SubnodeOpt("wheel_friction", YamlReader::MAP).Node());
+
+  // Track width between the two drive wheels; required for friction traction
+  // because diff_drive has no explicit wheel joints to infer geometry from.
+  wheel_separation_ = reader.Get<double>("wheel_separation", 0.0);
+  if (use_friction_drive_ && wheel_separation_ <= 0.0) {
+    throw YAMLException(
+        "drive_mode \"friction\" requires a positive \"wheel_separation\"");
+  }
+
   // by default the covariance diagonal is the variance of actual noise
   // generated, non-diagonal elements are zero assuming the noises are
   // independent, we also don't care about linear z, angular x, and angular y
@@ -191,26 +213,33 @@ void DiffDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
   linear_velocity_ = linear_dynamics_.Limit(linear_velocity_, twist_msg_.linear.x, dt);
   angular_velocity_ = angular_dynamics_.Limit(angular_velocity_, twist_msg_.angular.z, dt);
 
-  // we apply the twist velocities, this must be done every physics step to make
-  // sure Box2D solver applies the correct velocity through out. The velocity
-  // given in the twist message should be in the local frame
-  b2Vec2 linear_vel_local(linear_velocity_, 0);
-  b2Vec2 linear_vel = b2body->GetWorldVector(linear_vel_local);
-  float angular_vel = angular_velocity_;  // angular is independent of frames
+  if (use_friction_drive_) {
+    // Force-based traction: let the Box2D solver integrate the body under the
+    // slip-limited friction forces at each wheel instead of overwriting the
+    // velocity. This lets commanded motion exceed grip and produce real slip.
+    ApplyFrictionDrive(b2body, dt);
+  } else {
+    // we apply the twist velocities, this must be done every physics step to
+    // make sure Box2D solver applies the correct velocity through out. The
+    // velocity given in the twist message should be in the local frame
+    b2Vec2 linear_vel_local(linear_velocity_, 0);
+    b2Vec2 linear_vel = b2body->GetWorldVector(linear_vel_local);
+    float angular_vel = angular_velocity_;  // angular is independent of frames
 
-  // we want the velocity vector in the world frame at the center of mass
+    // we want the velocity vector in the world frame at the center of mass
 
-  // V_cm = V_o + W x r_cm/o
-  // velocity at center of mass equals to the velocity at the body origin plus,
-  // angular velocity cross product the displacement from the body origin to the
-  // center of mass
+    // V_cm = V_o + W x r_cm/o
+    // velocity at center of mass equals to the velocity at the body origin
+    // plus, angular velocity cross product the displacement from the body
+    // origin to the center of mass
 
-  // r is the vector from body origin to the CM in world frame
-  b2Vec2 r = b2body->GetWorldCenter() - position;
-  b2Vec2 linear_vel_cm = linear_vel + angular_vel * b2Vec2(-r.y, r.x);
+    // r is the vector from body origin to the CM in world frame
+    b2Vec2 r = b2body->GetWorldCenter() - position;
+    b2Vec2 linear_vel_cm = linear_vel + angular_vel * b2Vec2(-r.y, r.x);
 
-  b2body->SetLinearVelocity(linear_vel_cm);
-  b2body->SetAngularVelocity(angular_vel);
+    b2body->SetLinearVelocity(linear_vel_cm);
+    b2body->SetAngularVelocity(angular_vel);
+  }
 
   // Update odom+ground truth messages if needed
 
@@ -293,6 +322,41 @@ void DiffDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
     }
   }
 
+}
+
+void DiffDrive::ApplyFrictionDrive(b2Body* b2body, double dt) {
+  // Two drive wheels straddle the body x-axis at +/- half the track width.
+  double half_track = 0.5 * wheel_separation_;
+
+  // Normal load distributed evenly across the two drive wheels (simple mass*g
+  // split; z-load / CoG shifts are deferred to the 2.5D contact backlog task).
+  double normal_load = 0.5 * b2body->GetMass() * WheelFrictionModel::kGravity;
+
+  // left wheel at +y, right wheel at -y in the body frame
+  const double wheel_y[2] = {half_track, -half_track};
+
+  for (int i = 0; i < 2; i++) {
+    b2Vec2 wheel_local(0.0f, static_cast<float>(wheel_y[i]));
+
+    // Commanded contact-patch velocity from the limited twist: the no-slip body
+    // velocity Box2D would see at this wheel. Longitudinal only (= forward); the
+    // wheel is not driven sideways so its commanded lateral velocity is zero.
+    // v_x at the wheel = v - w * y_wheel (from omega x r).
+    double commanded_long = linear_velocity_ - angular_velocity_ * wheel_y[i];
+
+    // Actual body velocity at the contact point, expressed in the body/wheel
+    // frame (diff-drive wheels point along body x).
+    b2Vec2 vel_world = b2body->GetLinearVelocityFromLocalPoint(wheel_local);
+    b2Vec2 vel_local = b2body->GetLocalVector(vel_world);
+
+    double slip_long = commanded_long - vel_local.x;
+    double slip_lat = 0.0 - vel_local.y;
+
+    b2Vec2 force_local =
+        wheel_friction_.ComputeWheelForce(slip_long, slip_lat, normal_load, dt);
+    b2Vec2 force_world = b2body->GetWorldVector(force_local);
+    b2body->ApplyForce(force_world, b2body->GetWorldPoint(wheel_local), true);
+  }
 }
 }
 

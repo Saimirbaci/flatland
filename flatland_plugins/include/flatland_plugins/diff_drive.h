@@ -47,6 +47,7 @@
 #include <Box2D/Box2D.h>
 #include <flatland_plugins/update_timer.h>
 #include <flatland_plugins/dynamics_limits.h>
+#include <flatland_plugins/wheel_friction_model.h>
 #include <flatland_server/model_plugin.h>
 #include <flatland_server/timekeeper.h>
 #include <geometry_msgs/Twist.h>
@@ -84,6 +85,11 @@ class DiffDrive : public flatland_server::ModelPlugin {
   double angular_velocity_ = 0.0;
   double linear_velocity_ = 0.0;
 
+  WheelFrictionModel wheel_friction_;  ///< Anisotropic wheel-ground friction model
+  bool use_friction_drive_ = false;    ///< drive_mode: friction (force-based) vs
+                                       /// kinematic (default, SetLinearVelocity)
+  double wheel_separation_ = 0.0;      ///< Track width between drive wheels [m]
+
   std::default_random_engine rng_;
   std::array<std::normal_distribution<double>, 6> noise_gen_;
 
@@ -99,6 +105,18 @@ class DiffDrive : public flatland_server::ModelPlugin {
    * @param[in]     config The plugin YAML node
    */
   void BeforePhysicsStep(const Timekeeper& timekeeper) override;
+  /**
+   * @name          ApplyFrictionDrive
+   * @brief         Apply slip-limited traction forces at each drive wheel
+   * @details       Force-based alternative to the kinematic SetLinearVelocity
+   *                path. For each of the two drive wheels it computes the
+   *                longitudinal/lateral slip between the commanded (limited)
+   *                twist and the actual contact-patch velocity, then applies the
+   *                anisotropic Coulomb friction force from wheel_friction_.
+   * @param[in]     b2body The model body to drive
+   * @param[in]     dt     The physics timestep [s]
+   */
+  void ApplyFrictionDrive(b2Body* b2body, double dt);
   /**
    * @name        TwistCallback
    * @brief       callback to apply twist (velocity and omega)
