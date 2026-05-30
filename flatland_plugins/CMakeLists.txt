@@ -74,6 +74,7 @@ add_library(flatland_plugins_lib
   src/tricycle_drive.cpp
   src/diff_drive.cpp
   src/dynamics_limits.cpp
+  src/wheel_friction_model.cpp
   src/imu.cpp
   src/model_tf_publisher.cpp
   src/update_timer.cpp
@@ -145,6 +146,9 @@ if(CATKIN_ENABLE_TESTING)
 
   catkin_add_gtest(dynamics_limits_test test/dynamics_limits_test.cpp)
   target_link_libraries(dynamics_limits_test flatland_plugins_lib)
+
+  catkin_add_gtest(wheel_friction_model_test test/wheel_friction_model_test.cpp)
+  target_link_libraries(wheel_friction_model_test flatland_plugins_lib)
 
   add_rostest_gtest(tricycle_drive_test test/tricycle_drive_test.test
                     test/tricycle_drive_test.cpp)

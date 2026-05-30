@@ -1,0 +1,40 @@
+# Minimal diff-drive robot for the wheel-friction (force-based traction) test.
+# A single dynamic square body driven by the DiffDrive plugin in "friction"
+# mode so the slip-limited traction path is exercised end-to-end.
+
+bodies:
+  - name: base
+    type: dynamic
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 100  # ~25 kg over the 0.5 x 0.5 m footprint, AGV-ish load
+        points: [[-0.25, -0.25],
+                 [ 0.25, -0.25],
+                 [ 0.25,  0.25],
+                 [-0.25,  0.25]]
+
+plugins:
+  - type: DiffDrive
+    name: base_drive
+    body: base
+    odom_frame_id: map
+    pub_rate: 100
+    # Force-based traction: command velocities are bounded by anisotropic
+    # wheel-ground friction instead of being applied ideally.
+    drive_mode: friction
+    wheel_separation: 0.4  # track width between the two drive wheels [m]
+    # Calibrated-default friction set (see doc/wheel_friction.md). Lateral grip
+    # is higher than longitudinal so the robot resists side-slip more than it
+    # resists wheel spin. Calibration against measured robot data is pending.
+    wheel_friction:
+      enabled: true
+      mu_long_static: 1.0
+      mu_long_kinetic: 0.8
+      mu_lat_static: 1.2
+      mu_lat_kinetic: 1.0
+      static_slip_threshold: 0.05
+
+  - type: ModelTfPublisher
+    name: tf_publisher
+    publish_tf_world: true

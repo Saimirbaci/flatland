@@ -278,6 +278,64 @@ TEST_F(TricycleDrivePluginTest, drive_test_angular_limit) {
   EXPECT_NEAR(0+sin(0.2)*0.5*0.1, odom.pose.pose.position.y, 0.01);  // drive
 }
 
+// Force-based (friction) traction: commanding forward velocity should drive the
+// robot forward through the wheel-ground friction model rather than ideally.
+// With the high-grip calibrated defaults the body tracks the command (no
+// persistent slip) but, unlike the kinematic path, the velocity ramps up under
+// the bounded traction force instead of jumping instantly.
+TEST_F(TricycleDrivePluginTest, friction_drive_test) {
+  world_yaml =
+      this_file_dir / fs::path("tricycle_drive_tests/world_friction.yaml");
+
+  Timekeeper timekeeper;
+  timekeeper.SetMaxStepSize(0.01);
+  w = World::MakeWorld(world_yaml.string());
+
+  ros::NodeHandle nh;
+  ros::Subscriber sub_1;
+  TricycleDrivePluginTest* obj = dynamic_cast<TricycleDrivePluginTest*>(this);
+  sub_1 = nh.subscribe("odometry/ground_truth", 1,
+                       &TricycleDrivePluginTest::GroundTruthSubscriberCB, obj);
+
+  TricycleDrive* td = dynamic_cast<TricycleDrive*>(
+      w->plugin_manager_.model_plugins_[0].get());
+  ASSERT_NE(nullptr, td);
+  EXPECT_TRUE(td->use_friction_drive_);
+
+  // Let things settle at rest
+  for (unsigned int i = 0; i < 100; i++) {
+    w->Update(timekeeper);
+    ros::spinOnce();
+  }
+  EXPECT_NEAR(0, odom.twist.twist.linear.x, 0.01);
+  EXPECT_NEAR(12.0, odom.pose.pose.position.x, 0.01);
+
+  // Command forward velocity
+  geometry_msgs::Twist cmd_vel;
+  cmd_vel.angular.z = 0.0;
+  cmd_vel.linear.x = 0.5;  // m/s
+  td->TwistCallback(cmd_vel);
+
+  // After only a couple of steps the body has not yet reached the command:
+  // traction is force-limited (this is the observable difference from the ideal
+  // kinematic path, which would jump to 0.5 m/s in a single step).
+  for (unsigned int i = 0; i < 2; i++) {
+    w->Update(timekeeper);
+    ros::spinOnce();
+  }
+  EXPECT_GT(odom.twist.twist.linear.x, 0.0);   // moving forward
+  EXPECT_LT(odom.twist.twist.linear.x, 0.5);   // but not instantly at command
+
+  // Given enough time the high-grip wheel reaches the commanded velocity
+  for (unsigned int i = 0; i < 300; i++) {
+    w->Update(timekeeper);
+    ros::spinOnce();
+  }
+  EXPECT_NEAR(0.5, odom.twist.twist.linear.x, 0.05);  // tracks command
+  EXPECT_GT(odom.pose.pose.position.x, 12.2);         // drove forward
+  EXPECT_NEAR(0.0, odom.pose.pose.position.y, 0.05);  // bounded side-slip
+}
+
 // Run all the tests that were declared with TEST()
 int main(int argc, char** argv) {
   ros::init(argc, argv, "tricycle_test");
