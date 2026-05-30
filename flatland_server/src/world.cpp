@@ -220,7 +220,14 @@ World *World::MakeWorld(const std::string &yaml_path, int seed) {
         world_reader.SubnodeOpt("models", YamlReader::LIST);
     YamlReader world_plugin_reader =
         world_reader.SubnodeOpt("plugins", YamlReader::LIST);
+    // Optional per-region surface friction (wet patches, spills, ramps). Absent
+    // -> a disabled field that returns factor 1.0 everywhere, so existing
+    // worlds are unchanged.
+    YamlReader surface_friction_reader =
+        world_reader.SubnodeOpt("surface_friction", YamlReader::MAP);
     world_reader.EnsureAccessedAllKeys();
+    w->surface_friction_ = SurfaceFrictionField::FromConfig(
+        surface_friction_reader, w->world_yaml_dir_);
     w->LoadLayers(layers_reader);
     w->LoadModels(models_reader);
     w->LoadWorldPlugins(world_plugin_reader, w, world_reader);
@@ -335,6 +342,9 @@ void World::LoadModel(const std::string &model_yaml_path, const std::string &ns,
 
   Model *m =
       Model::MakeModel(physics_world_, &cfr_, abs_path.string(), ns, name);
+  // Back-pointer so plugins can reach world-scoped state (e.g. the surface
+  // friction field) through GetModel()->GetWorld(). Set before plugins load.
+  m->world_ = this;
   m->TransformAll(pose);
 
   try {

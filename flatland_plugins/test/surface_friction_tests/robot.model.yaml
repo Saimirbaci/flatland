@@ -1,0 +1,34 @@
+# Minimal diff-drive robot for the surface-friction (position-dependent
+# traction) test. A single dynamic square body driven by the DiffDrive plugin
+# in "friction" mode, so the slip-limited traction path is scaled by the
+# world's surface_friction field at each wheel contact point.
+
+bodies:
+  - name: base
+    type: dynamic
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 100  # ~25 kg over the 0.5 x 0.5 m footprint, AGV-ish load
+        # No collision with the (empty) map layer is required; the robot drives
+        # on an open plane and its grip comes from the surface_friction field.
+        points: [[-0.25, -0.25],
+                 [ 0.25, -0.25],
+                 [ 0.25,  0.25],
+                 [-0.25,  0.25]]
+
+plugins:
+  - type: DiffDrive
+    name: base_drive
+    body: base
+    odom_frame_id: map
+    pub_rate: 1000  # publish every step so the test can sample accel windows
+    drive_mode: friction
+    wheel_separation: 0.4  # track width between the two drive wheels [m]
+    wheel_friction:
+      enabled: true
+      mu_long_static: 1.0
+      mu_long_kinetic: 0.8
+      mu_lat_static: 1.2
+      mu_lat_kinetic: 1.0
+      static_slip_threshold: 0.05

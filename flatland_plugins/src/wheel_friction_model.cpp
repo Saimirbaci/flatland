@@ -66,7 +66,7 @@ void WheelFrictionModel::Configure(const YAML::Node &config) {
 
 double WheelFrictionModel::AxisForce(double slip_vel, double mu_static,
                                      double mu_kinetic, double normal_load,
-                                     double dt) const {
+                                     double dt, double surface_factor) const {
   // Share of mass carried by this wheel, recovered from the normal load.
   double effective_mass = normal_load / kGravity;
 
@@ -76,26 +76,28 @@ double WheelFrictionModel::AxisForce(double slip_vel, double mu_static,
   // Coulomb ceiling: static (grip) below the slip threshold, kinetic (slipping)
   // above it. This makes the wheel hold commanded motion until the demanded
   // force exceeds mu_static * load, then drop to the lower kinetic plateau.
+  // surface_factor scales the available grip by the surface under the wheel
+  // (e.g. < 1 over a wet patch), so the wheel saturates and slips sooner there.
   double mu =
       (std::fabs(slip_vel) < static_slip_threshold_) ? mu_static : mu_kinetic;
-  double max_force = mu * normal_load;
+  double max_force = surface_factor * mu * normal_load;
 
   return std::max(-max_force, std::min(null_force, max_force));
 }
 
 b2Vec2 WheelFrictionModel::ComputeWheelForce(double longitudinal_slip_vel,
                                              double lateral_slip_vel,
-                                             double normal_load,
-                                             double dt) const {
+                                             double normal_load, double dt,
+                                             double surface_factor) const {
   // Degenerate inputs produce no force rather than a divide-by-zero.
   if (dt <= 0.0 || normal_load <= 0.0) {
     return b2Vec2(0.0f, 0.0f);
   }
 
   double fx = AxisForce(longitudinal_slip_vel, mu_long_static_,
-                        mu_long_kinetic_, normal_load, dt);
+                        mu_long_kinetic_, normal_load, dt, surface_factor);
   double fy = AxisForce(lateral_slip_vel, mu_lat_static_, mu_lat_kinetic_,
-                        normal_load, dt);
+                        normal_load, dt, surface_factor);
 
   return b2Vec2(static_cast<float>(fx), static_cast<float>(fy));
 }

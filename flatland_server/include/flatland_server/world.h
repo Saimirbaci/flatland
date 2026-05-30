@@ -53,6 +53,7 @@
 #include <flatland_server/layer.h>
 #include <flatland_server/model.h>
 #include <flatland_server/plugin_manager.h>
+#include <flatland_server/surface_friction_field.h>
 #include <flatland_server/timekeeper.h>
 #include <map>
 #include <string>
@@ -92,6 +93,11 @@ class World : public b2ContactListener {
                              ///(CCD). Keeps fast/thin bodies from tunnelling
                              /// through walls; disable to trade realism for
                              /// throughput.
+  SurfaceFrictionField surface_friction_;  ///< per-region surface friction
+                                           /// multiplier field (wet patches,
+                                           /// spills, ramps). Disabled (factor
+                                           /// 1.0 everywhere) unless the world
+                                           /// YAML has a surface_friction block.
 
   /**
    * @brief Constructor for the world class. All data required for
@@ -210,6 +216,21 @@ class World : public b2ContactListener {
    * @return pointer to a new world
    */
   static World *MakeWorld(const std::string &yaml_path, int seed = -1);
+
+  /**
+   * @brief Sample the surface friction multiplier at a world point.
+   *
+   * Returns a smoothly-varying, bounded multiplier (1.0 = nominal/dry) that
+   * plugins scale their friction coefficients by, so a body loses traction
+   * continuously over wet patches/spills and recovers on dry ground. Worlds
+   * without a surface_friction block always return 1.0.
+   *
+   * @param[in] point Query point in world coordinates [m]
+   * @return Surface friction multiplier at the point
+   */
+  double GetSurfaceFrictionFactor(const b2Vec2 &point) const {
+    return surface_friction_.GetFrictionFactor(point);
+  }
 
   /**
    * @brief Publish debug visualizations for everything

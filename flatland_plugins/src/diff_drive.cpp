@@ -49,6 +49,7 @@
 #include <flatland_server/debug_visualization.h>
 #include <flatland_server/model_plugin.h>
 #include <flatland_server/random.h>
+#include <flatland_server/world.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <geometry_msgs/TwistWithCovarianceStamped.h>
 #include <pluginlib/class_list_macros.h>
@@ -335,6 +336,10 @@ void DiffDrive::ApplyFrictionDrive(b2Body* b2body, double dt) {
   // left wheel at +y, right wheel at -y in the body frame
   const double wheel_y[2] = {half_track, -half_track};
 
+  // World owning this model, used to look up the surface friction multiplier
+  // under each wheel. Null only in detached unit setups; treat as nominal grip.
+  flatland_server::World* world = GetModel()->GetWorld();
+
   for (int i = 0; i < 2; i++) {
     b2Vec2 wheel_local(0.0f, static_cast<float>(wheel_y[i]));
 
@@ -352,10 +357,18 @@ void DiffDrive::ApplyFrictionDrive(b2Body* b2body, double dt) {
     double slip_long = commanded_long - vel_local.x;
     double slip_lat = 0.0 - vel_local.y;
 
-    b2Vec2 force_local =
-        wheel_friction_.ComputeWheelForce(slip_long, slip_lat, normal_load, dt);
+    // Surface friction multiplier sampled at this wheel's world contact point,
+    // so traction drops smoothly over wet patches/spills and recovers on dry
+    // ground. Per-wheel (not body-centre) so a robot straddling a boundary
+    // gets the correct differential grip.
+    b2Vec2 wheel_world = b2body->GetWorldPoint(wheel_local);
+    double surface_factor =
+        world ? world->GetSurfaceFrictionFactor(wheel_world) : 1.0;
+
+    b2Vec2 force_local = wheel_friction_.ComputeWheelForce(
+        slip_long, slip_lat, normal_load, dt, surface_factor);
     b2Vec2 force_world = b2body->GetWorldVector(force_local);
-    b2body->ApplyForce(force_world, b2body->GetWorldPoint(wheel_local), true);
+    b2body->ApplyForce(force_world, wheel_world, true);
   }
 }
 }

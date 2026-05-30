@@ -49,6 +49,7 @@
 #include <flatland_server/debug_visualization.h>
 #include <flatland_server/model_plugin.h>
 #include <flatland_server/random.h>
+#include <flatland_server/world.h>
 #include <flatland_server/yaml_reader.h>
 #include <pluginlib/class_list_macros.h>
 #include <ros/ros.h>
@@ -472,6 +473,13 @@ void TricycleDrive::ApplyFrictionDrive(b2Body* b2body, double dt) {
   // geometry-weighted or z-load split is left to the 2.5D contact backlog task.
   double normal_load = b2body->GetMass() * WheelFrictionModel::kGravity / 3.0;
 
+  // World owning this model, used to look up the surface friction multiplier
+  // under each wheel. Null only in detached unit setups; treat as nominal grip.
+  flatland_server::World* world = GetModel()->GetWorld();
+  auto surface_factor_at = [&](const b2Vec2& world_point) {
+    return world ? world->GetSurfaceFrictionFactor(world_point) : 1.0;
+  };
+
   // --- Front wheel: steered and driven at v_f_ along its pointing direction --
   // The front wheel contacts at the body origin (asserted in ComputeJoints).
   // Its heading in the body frame is theta_f_ (the same convention the
@@ -492,12 +500,13 @@ void TricycleDrive::ApplyFrictionDrive(b2Body* b2body, double dt) {
   double front_slip_long = v_f_ - front_actual_long;
   double front_slip_lat = 0.0 - front_actual_lat;
 
+  b2Vec2 front_world = b2body->GetWorldPoint(front_local);
   b2Vec2 front_force = wheel_friction_.ComputeWheelForce(
-      front_slip_long, front_slip_lat, normal_load, dt);
+      front_slip_long, front_slip_lat, normal_load, dt,
+      surface_factor_at(front_world));
   b2Vec2 front_force_world =
       front_force.x * front_long_axis + front_force.y * front_lat_axis;
-  b2body->ApplyForce(front_force_world, b2body->GetWorldPoint(front_local),
-                     true);
+  b2body->ApplyForce(front_force_world, front_world, true);
 
   // --- Rear wheels: passive rolling, longitudinally free, laterally gripped --
   // They point along the body x-axis; only side-slip (body y) is resisted.
@@ -507,12 +516,13 @@ void TricycleDrive::ApplyFrictionDrive(b2Body* b2body, double dt) {
     b2Vec2 vel_local = b2body->GetLocalVector(vel_world);
 
     // Rolling constraint: no commanded longitudinal drive (slip_long = 0),
-    // resist the lateral component of the contact velocity.
-    b2Vec2 force_local =
-        wheel_friction_.ComputeWheelForce(0.0, -vel_local.y, normal_load, dt);
+    // resist the lateral component of the contact velocity. The surface factor
+    // under this wheel scales the available lateral grip.
+    b2Vec2 rear_world = b2body->GetWorldPoint(rear_anchors[i]);
+    b2Vec2 force_local = wheel_friction_.ComputeWheelForce(
+        0.0, -vel_local.y, normal_load, dt, surface_factor_at(rear_world));
     b2Vec2 force_world = b2body->GetWorldVector(force_local);
-    b2body->ApplyForce(force_world, b2body->GetWorldPoint(rear_anchors[i]),
-                       true);
+    b2body->ApplyForce(force_world, rear_world, true);
   }
 }
 
