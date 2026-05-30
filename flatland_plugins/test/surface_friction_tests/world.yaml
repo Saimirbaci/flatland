@@ -1,0 +1,26 @@
+properties: {}  # defaults (1 sub-step, CCD on), matching the diff_drive test
+
+layers:
+  # An obstacle-free occupancy map (all-black => nothing above occupied_thresh),
+  # so the robot drives across an open plane whose grip varies by region via the
+  # surface_friction field below.
+  - name: "2d"
+    map: "map.yaml"
+    color: [0, 1, 0, 1]
+
+# Per-region surface friction: a grayscale image mapped to a friction
+# multiplier. White (255) is dry (mu_max), black (0) is wet (mu_min). The robot
+# starts on dry ground (x < 2 m), crosses a wet patch (3 m < x < 7 m), and
+# returns to dry (x > 8 m). Transitions are smooth so the traction solver never
+# sees a step change. See flatland_plugins/test/surface_friction_tests.
+surface_friction:
+  map: "friction_map.png"
+  resolution: 0.05          # metres per pixel
+  origin: [-1.0, -1.0]      # world coord of the image lower-left corner
+  mu_min: 0.15              # multiplier for fully-wet (black) pixels
+  mu_max: 1.0               # multiplier for fully-dry (white) pixels
+
+models:
+  - name: robot1
+    pose: [0, 0, 0]
+    model: "robot.model.yaml"

@@ -125,13 +125,38 @@ non-positive there.
    transitions from the static plateau to the kinetic plateau (typically a few
    cm/s for hard tires).
 
+## Surface-dependent friction (implemented)
+
+Per-region surface friction is now wired in through the documented hook.
+`WheelFrictionModel::ComputeWheelForce` (and the private `AxisForce`) take an
+extra `surface_factor` argument (default `1.0`) that multiplies the configured
+`μ` before the Coulomb clamp:
+
+```
+F_axis = clamp( m_share · slip / dt , −(s·μ)·N , +(s·μ)·N )
+```
+
+where `s` is the surface factor. The drive plugins sample `s` once per wheel,
+per step, at that wheel's world contact point via
+`World::GetSurfaceFrictionFactor(b2Vec2)`, which delegates to the world-owned
+`SurfaceFrictionField`. A wheel over a wet patch therefore saturates and slips
+sooner; a robot straddling a boundary gets the correct differential grip
+between its left/right (or front/rear) wheels.
+
+The field is defined by an optional `surface_friction` block in the **world**
+YAML (a grayscale image mapped to a `[mu_min, mu_max]` multiplier, sampled
+bilinearly so transitions are smooth — no friction step changes for the solver).
+See [`../../flatland_server/doc/surface_friction.md`](../../flatland_server/doc/surface_friction.md)
+for the schema. Worlds without the block are unchanged (`s == 1.0` everywhere).
+The model stays engine-decoupled: the factor is passed *in*, not queried inside
+`ComputeWheelForce`, so the unit tests still drive it as pure math.
+
+Trust boundary: region images and `μ` values come from the world YAML, which is
+already arbitrary-code-capable via the Lua preprocessor — no new capability is
+granted.
+
 ## Related / adjacent tasks
 
-- **Surface-dependent friction and traction loss** (*in progress*) — that task
-  should add a per-surface `μ` override (e.g. keyed off the layer/material under
-  the wheel) that scales the coefficients here. The integration hook is
-  `WheelFrictionModel::ComputeWheelForce`: multiply the configured `μ` by a
-  surface factor before the Coulomb clamp.
 - **2.5D / richer-contact extension (z-load, normal-force friction)**
   (*backlog*) — replaces the even `N = m·g / n_wheels` split with dynamic load
   transfer, as noted above.

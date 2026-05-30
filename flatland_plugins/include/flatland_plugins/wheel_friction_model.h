@@ -104,12 +104,19 @@ class WheelFrictionModel {
    *                velocity along the wheel lateral axis [m/s]
    * @param[in]     normal_load Normal load on the wheel [N] (= m_share * g)
    * @param[in]     dt Physics timestep [s]
+   * @param[in]     surface_factor Surface friction multiplier under the wheel
+   *                (1.0 = nominal/dry, < 1.0 = wet/slippery). Scales the Coulomb
+   *                ceiling mu * normal_load before clamping, so a wheel over a
+   *                wet patch loses traction. Sampled from the world's surface
+   *                friction field at the wheel contact point; defaults to 1.0
+   *                so the model is unchanged when no field is configured.
    * @return        Friction force in the wheel frame (x = longitudinal,
-   *                y = lateral), each component clamped to mu * normal_load
+   *                y = lateral), each component clamped to
+   *                surface_factor * mu * normal_load
    */
   b2Vec2 ComputeWheelForce(double longitudinal_slip_vel,
                            double lateral_slip_vel, double normal_load,
-                           double dt) const;
+                           double dt, double surface_factor = 1.0) const;
 
  private:
   /**
@@ -120,10 +127,13 @@ class WheelFrictionModel {
    * @param[in]     mu_kinetic Kinetic friction coefficient for the axis
    * @param[in]     normal_load Normal load on the wheel [N]
    * @param[in]     dt Physics timestep [s]
-   * @return        Friction force along the axis [N], clamped to mu * load
+   * @param[in]     surface_factor Surface friction multiplier (1.0 = nominal)
+   *                scaling the Coulomb ceiling
+   * @return        Friction force along the axis [N], clamped to
+   *                surface_factor * mu * load
    */
   double AxisForce(double slip_vel, double mu_static, double mu_kinetic,
-                   double normal_load, double dt) const;
+                   double normal_load, double dt, double surface_factor) const;
 };
 
 }  // namespace flatland_plugins

@@ -59,6 +59,7 @@ namespace flatland_server {
 
 class ModelBody;
 class Joint;
+class World;
 
 /**
  * This class defines a Model. It can be used to repsent any object in the
@@ -72,6 +73,11 @@ class Model : public Entity {
   YamlReader plugins_reader_;        ///< for storing plugins when paring YAML
   CollisionFilterRegistry *cfr_;     ///< Collision filter registry
   std::string viz_name_;             ///< used for visualization
+  World *world_ = nullptr;  ///< non-owning back-pointer to the owning World, set
+                            /// when the model is loaded. Lets plugins query
+                            /// world-scoped state (e.g. surface friction) via
+                            /// GetWorld() without a global. The World outlives
+                            /// all its models, so this never dangles.
 
   /**
    * @brief Constructor for the model
@@ -148,6 +154,12 @@ class Model : public Entity {
    * @return The name of the model
    */
   const std::string &GetName() const;
+
+  /**
+   * @return non-owning pointer to the World that owns this model, or nullptr if
+   * the model has not been added to a world yet
+   */
+  World *GetWorld() const { return world_; }
 
   /**
    * @return The collision filter registrar
