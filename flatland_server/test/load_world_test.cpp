@@ -509,6 +509,31 @@ class LoadWorldTest : public ::testing::Test {
 };
 
 /**
+ * A world whose properties omit the contact-solver knobs must fall back to the
+ * historical defaults: 10/10 iterations, a single sub-step, and CCD enabled.
+ * This guards the determinism baseline for existing worlds.
+ */
+TEST_F(LoadWorldTest, solver_config_defaults) {
+  world_yaml = this_file_dir / fs::path("benchmark_world/world.yaml");
+  w = World::MakeWorld(world_yaml.string());
+
+  EXPECT_EQ(w->physics_velocity_iterations_, 10);
+  EXPECT_EQ(w->physics_position_iterations_, 10);
+  EXPECT_EQ(w->physics_substeps_, 1);
+  EXPECT_TRUE(w->continuous_physics_);
+}
+
+/**
+ * A non-positive sub-step count is a configuration error and must throw rather
+ * than silently dividing the step by zero.
+ */
+TEST_F(LoadWorldTest, solver_config_invalid_substeps) {
+  world_yaml =
+      this_file_dir / fs::path("load_world_tests/invalid_substeps/world.yaml");
+  test_yaml_fail("Invalid \"substeps\" in world properties.*");
+}
+
+/**
  * This test loads the world, layers, models from the given world
  * yaml file and checks that all configurations, data, and calculations are
  * correct after instantiation
@@ -520,6 +545,8 @@ TEST_F(LoadWorldTest, simple_test_A) {
 
   EXPECT_EQ(w->physics_velocity_iterations_, 11);
   EXPECT_EQ(w->physics_position_iterations_, 12);
+  EXPECT_EQ(w->physics_substeps_, 3);
+  EXPECT_FALSE(w->continuous_physics_);
 
   ASSERT_EQ(w->layers_.size(), 4);
 

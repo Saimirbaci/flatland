@@ -1,0 +1,10 @@
+<!--
+Test launchfile for solver_stability_test
+
+Runs rosmaster so the World (and its Timekeeper /clock publisher) can be
+constructed during the AGV-scale contact-solver stability tests.
+-->
+<launch>
+  <test pkg="flatland_server" type="solver_stability_test"
+        test-name="solver_stability_test"/>
+</launch>

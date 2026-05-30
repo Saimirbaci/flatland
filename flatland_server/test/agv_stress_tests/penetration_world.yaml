@@ -1,0 +1,23 @@
+# Penetration stress world: a ~1500 kg AGV is driven into a static wall.
+# A well-tuned solver lets the heavy body settle against the wall with only a
+# small, bounded penetration rather than sinking through it.
+#
+# substeps / continuous_physics are the contact-solver knobs added for
+# AGV-scale dynamics (see flatland_server/doc/contact_solver.md). The values
+# here mirror the recommended AGV defaults.
+properties:
+  velocity_iterations: 12
+  position_iterations: 8
+  substeps: 4
+  continuous_physics: true
+layers:
+  # Collision-only layer (no map image), like the "robot" layer in
+  # load_world_tests/simple_test_A.
+  - name: "agv"
+models:
+  - name: wall
+    pose: [3.0, 0.0, 0.0]
+    model: "wall.model.yaml"
+  - name: agv
+    pose: [0.0, 0.0, 0.0]
+    model: "heavy_agv.model.yaml"

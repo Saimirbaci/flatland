@@ -18,10 +18,22 @@ be found in flatland_server/tests.
     # physics solver
     velocity_iterations: 10
 
-    # optional, defaults to 10, number of position iterations for the Box2D 
+    # optional, defaults to 10, number of position iterations for the Box2D
     # physics solver
     position_iterations: 10
-  
+
+    # optional, defaults to 1, number of equal sub-steps Box2D integrates per
+    # outer step. The visible step_size is split into step_size / substeps for
+    # finer integration; improves contact stability for heavy/fast (AGV-scale)
+    # bodies without changing the published clock or plugin cadence. Must be >=1.
+    # See flatland_server/doc/contact_solver.md.
+    substeps: 1
+
+    # optional, defaults to true, enables Box2D continuous collision detection
+    # (CCD). Stops fast/thin bodies from tunnelling through static walls in a
+    # single step. Disable to trade realism for throughput.
+    continuous_physics: true
+
 
 
   # required, specifies a list of layers, maximum number of layers is 16,

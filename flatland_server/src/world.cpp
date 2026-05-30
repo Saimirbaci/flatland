@@ -65,9 +65,14 @@ namespace flatland_server {
 World::World()
     : gravity_(0, 0),
       service_paused_(false),
-      int_marker_manager_(&models_, &plugin_manager_) {
+      int_marker_manager_(&models_, &plugin_manager_),
+      physics_position_iterations_(10),
+      physics_velocity_iterations_(10),
+      physics_substeps_(1),
+      continuous_physics_(true) {
   physics_world_ = new b2World(gravity_);
   physics_world_->SetContactListener(this);
+  physics_world_->SetContinuousPhysics(continuous_physics_);
 }
 
 World::~World() {
@@ -105,8 +110,20 @@ World::~World() {
 void World::Update(Timekeeper &timekeeper) {
   if (!IsPaused()) {
     plugin_manager_.BeforePhysicsStep(timekeeper);
-    physics_world_->Step(timekeeper.GetStepSize(), physics_velocity_iterations_,
-                         physics_position_iterations_);
+    // Integrate physics in physics_substeps_ equal sub-steps. Box2D solver
+    // accuracy degrades for large dt at AGV mass/speed (penetration, tunnelling
+    // through thin walls); splitting the step into finer dt restores stability
+    // without touching the published clock or plugin cadence. The Timekeeper
+    // still advances by exactly one step_size, and plugin Before/After
+    // PhysicsStep fire once per outer step, so observable timing is unchanged.
+    // substeps == 1 is bit-for-bit identical to a single Step(step_size, ...)
+    // call (the prior behavior), preserving determinism for existing worlds.
+    const double sub_dt =
+        timekeeper.GetStepSize() / static_cast<double>(physics_substeps_);
+    for (int i = 0; i < physics_substeps_; i++) {
+      physics_world_->Step(sub_dt, physics_velocity_iterations_,
+                           physics_position_iterations_);
+    }
     timekeeper.StepTime();
     plugin_manager_.AfterPhysicsStep(timekeeper);
   }
@@ -165,10 +182,21 @@ World *World::MakeWorld(const std::string &yaml_path, int seed) {
   YamlReader prop_reader = world_reader.Subnode("properties", YamlReader::MAP);
   int v = prop_reader.Get<int>("velocity_iterations", 10);
   int p = prop_reader.Get<int>("position_iterations", 10);
+  // Contact-solver tuning for AGV-scale dynamics (heavy/fast bodies). substeps
+  // splits the visible step into finer integration dt; continuous_physics
+  // toggles CCD against tunnelling. Defaults preserve the historical behavior
+  // (1 sub-step, CCD on). See flatland_server/doc/contact_solver.md.
+  int substeps = prop_reader.Get<int>("substeps", 1);
+  bool continuous = prop_reader.Get<bool>("continuous_physics", true);
   // Read (and thus "access") the optional seed so EnsureAccessedAllKeys() is
   // happy; node-param seed takes precedence over this YAML value.
   int yaml_seed = prop_reader.Get<int>("seed", -1);
   prop_reader.EnsureAccessedAllKeys();
+
+  if (substeps < 1) {
+    throw YAMLException("Invalid \"substeps\" in world properties: " +
+                        std::to_string(substeps) + " (must be >= 1)");
+  }
 
   // node-param seed wins; otherwise fall back to properties.seed (and finally a
   // nondeterministic seed). Seeded before any model/plugin loads so plugin noise
@@ -182,6 +210,9 @@ World *World::MakeWorld(const std::string &yaml_path, int seed) {
   w->world_yaml_dir_ = boost::filesystem::path(yaml_path).parent_path();
   w->physics_velocity_iterations_ = v;
   w->physics_position_iterations_ = p;
+  w->physics_substeps_ = substeps;
+  w->continuous_physics_ = continuous;
+  w->physics_world_->SetContinuousPhysics(continuous);
 
   try {
     YamlReader layers_reader = world_reader.Subnode("layers", YamlReader::LIST);

@@ -1,0 +1,17 @@
+# Heavy AGV-scale model for the penetration stress test.
+#
+# Circle footprint, radius 0.5 m -> area = pi * 0.25 = 0.7854 m^2.
+# With density 1910 kg/m^2 the body mass is ~1500 kg, the top of the AGV
+# mass range we validate. (Flatland is 2D, so "density" is mass per unit
+# area; mass = density * footprint_area.)
+bodies:
+  - name: base
+    pose: [0, 0, 0]
+    type: dynamic
+    color: [0.9, 0.2, 0.2, 0.75]
+    footprints:
+      - type: circle
+        layers: ["agv"]
+        radius: 0.5
+        center: [0.0, 0.0]
+        density: 1910.0

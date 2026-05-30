@@ -83,6 +83,15 @@ class World : public b2ContactListener {
       int_marker_manager_;  ///< for dynamically moving models from Rviz
   int physics_position_iterations_;  ///< Box2D solver param
   int physics_velocity_iterations_;  ///< Box2D solver param
+  int physics_substeps_;  ///< number of fixed sub-steps Box2D integrates per
+                          /// outer step (>=1). Splits the visible step_size
+                          /// into finer dt for contact stability at AGV
+                          /// mass/speed without changing the published clock
+                          /// or plugin step cadence.
+  bool continuous_physics_;  ///< toggles Box2D continuous collision detection
+                             ///(CCD). Keeps fast/thin bodies from tunnelling
+                             /// through walls; disable to trade realism for
+                             /// throughput.
 
   /**
    * @brief Constructor for the world class. All data required for

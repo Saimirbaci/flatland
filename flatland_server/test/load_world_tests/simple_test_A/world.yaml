@@ -1,6 +1,8 @@
-properties: 
+properties:
   velocity_iterations: 11
   position_iterations: 12
+  substeps: 3
+  continuous_physics: false
 layers:
   - name: "2d"
     map: "map.yaml"

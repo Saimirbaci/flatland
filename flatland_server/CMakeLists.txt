@@ -276,5 +276,11 @@ if(CATKIN_ENABLE_TESTING)
   target_link_libraries(determinism_test
     flatland_lib)
 
+  add_rostest_gtest(solver_stability_test
+    test/solver_stability_test.test
+    test/solver_stability_test.cpp)
+  target_link_libraries(solver_stability_test
+    flatland_lib)
+
 
 endif()

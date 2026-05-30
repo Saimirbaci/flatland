@@ -1,0 +1,20 @@
+# Tunnelling stress world: a small, fast (~50 kg) AGV is launched at a thin
+# static wall. With continuous_physics (CCD) on, Box2D catches the swept
+# collision and the body stays on the near side of the wall instead of passing
+# through it in a single step.
+#
+# continuous_physics: true is the property under test here.
+properties:
+  velocity_iterations: 12
+  position_iterations: 8
+  substeps: 1
+  continuous_physics: true
+layers:
+  - name: "agv"
+models:
+  - name: wall
+    pose: [3.0, 0.0, 0.0]
+    model: "wall.model.yaml"
+  - name: agv
+    pose: [0.0, 0.0, 0.0]
+    model: "fast_agv.model.yaml"

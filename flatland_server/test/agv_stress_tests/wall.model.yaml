@@ -1,0 +1,14 @@
+# A static, thin, tall wall used as the impact / tunnelling barrier for the
+# AGV-scale contact-solver stress tests. It carries no map image; it is a
+# single static polygon fixture on the "agv" collision layer.
+bodies:
+  - name: wall
+    pose: [0, 0, 0]
+    type: static
+    color: [0.6, 0.6, 0.6, 1.0]
+    footprints:
+      # 0.2 m thick (x), 8 m tall (y) slab centred on the body origin.
+      - type: polygon
+        layers: ["agv"]
+        density: 1.0
+        points: [[-0.1, -4.0], [0.1, -4.0], [0.1, 4.0], [-0.1, 4.0]]
