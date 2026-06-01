@@ -1,0 +1,10 @@
+<!--
+Test launchfile for surface_friction_test
+
+Runs rosmaster so the DiffDrive plugin can publish odometry while the robot
+drives across a wet patch defined by the world's surface_friction field.
+-->
+<launch>
+  <test pkg="flatland_plugins" type="surface_friction_test"
+        test-name="surface_friction_test" time-limit="120.0"/>
+</launch>

@@ -158,6 +158,10 @@ if(CATKIN_ENABLE_TESTING)
                     test/diff_drive_test.cpp)
   target_link_libraries(diff_drive_test flatland_plugins_lib)
 
+  add_rostest_gtest(surface_friction_test test/surface_friction_test.test
+                    test/surface_friction_test.cpp)
+  target_link_libraries(surface_friction_test flatland_plugins_lib)
+
   add_rostest_gtest(imu_test test/imu_test.test
                     test/imu_test.cpp)
   target_link_libraries(imu_test flatland_plugins_lib)
