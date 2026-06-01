@@ -29,4 +29,7 @@
   <class type="flatland_plugins::RandomWall" base_class_type="flatland_server::WorldPlugin">
     <description>Add random walls into the world</description>
   </class>
+  <class type="flatland_plugins::VariablePayload" base_class_type="flatland_server::ModelPlugin">
+    <description>Time-varying payload mass and center of gravity for a body</description>
+  </class>
 </library>

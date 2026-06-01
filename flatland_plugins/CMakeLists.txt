@@ -84,6 +84,7 @@ add_library(flatland_plugins_lib
   src/world_modifier.cpp
   src/world_random_wall.cpp
   src/gps.cpp
+  src/variable_payload.cpp
 )
 
 add_dependencies(flatland_plugins_lib ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -185,5 +186,9 @@ if(CATKIN_ENABLE_TESTING)
   add_rostest_gtest(gps_test test/gps_test.test
                     test/gps_test.cpp)
   target_link_libraries(gps_test flatland_plugins_lib)
+
+  add_rostest_gtest(variable_payload_test test/variable_payload_test.test
+                    test/variable_payload_test.cpp)
+  target_link_libraries(variable_payload_test flatland_plugins_lib)
 
 endif()

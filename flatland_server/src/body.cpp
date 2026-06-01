@@ -46,6 +46,8 @@
 
 #include <flatland_server/body.h>
 #include <ros/ros.h>
+#include <cmath>
+#include <stdexcept>
 
 namespace flatland_server {
 
@@ -78,6 +80,39 @@ int Body::GetFixturesCount() const {
   }
 
   return count;
+}
+
+b2MassData Body::GetMassData() const {
+  b2MassData data;
+  physics_body_->GetMassData(&data);
+  return data;
+}
+
+void Body::SetMassData(double mass, const b2Vec2 &local_center,
+                       double inertia) {
+  if (!std::isfinite(mass) || mass <= 0.0) {
+    throw std::invalid_argument(
+        "Body::SetMassData: mass must be a positive finite value, got " +
+        std::to_string(mass));
+  }
+
+  b2MassData data;
+  data.mass = static_cast<float>(mass);
+  data.center = local_center;
+
+  // A non-positive inertia means "keep the body's current rotational inertia".
+  // Box2D's SetMassData expects the inertia about the body local origin, so we
+  // read back the existing value rather than letting it collapse to zero (which
+  // would make the body resist no rotation at all).
+  if (std::isfinite(inertia) && inertia > 0.0) {
+    data.I = static_cast<float>(inertia);
+  } else {
+    b2MassData current;
+    physics_body_->GetMassData(&current);
+    data.I = current.I;
+  }
+
+  physics_body_->SetMassData(&data);
 }
 
 Entity *Body::GetEntity() { return entity_; }

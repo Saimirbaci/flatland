@@ -1,0 +1,9 @@
+properties: {}
+layers:
+  - name: "layer_1"
+    map: "map.yaml"
+    color: [0, 1, 0, 1]
+models:
+  - name: cleaning_agv
+    pose: [2, 2, 0]
+    model: water_tank_agv.model.yaml
