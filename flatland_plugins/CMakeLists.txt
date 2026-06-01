@@ -75,6 +75,7 @@ add_library(flatland_plugins_lib
   src/diff_drive.cpp
   src/dynamics_limits.cpp
   src/wheel_friction_model.cpp
+  src/actuator_dynamics.cpp
   src/imu.cpp
   src/model_tf_publisher.cpp
   src/update_timer.cpp
@@ -150,6 +151,19 @@ if(CATKIN_ENABLE_TESTING)
 
   catkin_add_gtest(wheel_friction_model_test test/wheel_friction_model_test.cpp)
   target_link_libraries(wheel_friction_model_test flatland_plugins_lib)
+
+  # ActuatorDynamics is a utility class (not a pluginlib plugin), so it needs no
+  # entry in flatland_plugins.xml; only a gtest unit target is added here.
+  catkin_add_gtest(actuator_dynamics_test test/actuator_dynamics_test.cpp)
+  target_link_libraries(actuator_dynamics_test flatland_plugins_lib)
+
+  add_rostest_gtest(diff_drive_actuator_test test/diff_drive_actuator_test.test
+                    test/diff_drive_actuator_test.cpp)
+  target_link_libraries(diff_drive_actuator_test flatland_plugins_lib)
+
+  add_rostest_gtest(tricycle_actuator_test test/tricycle_actuator_test.test
+                    test/tricycle_actuator_test.cpp)
+  target_link_libraries(tricycle_actuator_test flatland_plugins_lib)
 
   add_rostest_gtest(tricycle_drive_test test/tricycle_drive_test.test
                     test/tricycle_drive_test.cpp)

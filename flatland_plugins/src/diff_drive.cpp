@@ -45,6 +45,7 @@
  */
 
 #include <Box2D/Box2D.h>
+#include <cmath>
 #include <flatland_plugins/diff_drive.h>
 #include <flatland_server/debug_visualization.h>
 #include <flatland_server/model_plugin.h>
@@ -57,6 +58,22 @@
 #include <tf/tf.h>
 
 namespace flatland_plugins {
+
+namespace {
+// Clamp the achieved per-step acceleration (new_velocity - velocity) / dt to
+// +/- accel_cap, so the actuator effort limit modulates (further bounds) the
+// DynamicsLimits ramp rather than adding a second independent ramp. An infinite
+// cap (effort limit disabled) is a pass-through.
+double CapAcceleration(double velocity, double new_velocity, double accel_cap,
+                       double dt) {
+  if (!std::isfinite(accel_cap) || dt <= 0.0) {
+    return new_velocity;
+  }
+  double accel = (new_velocity - velocity) / dt;
+  accel = DynamicsLimits::Saturate(accel, -accel_cap, accel_cap);
+  return velocity + accel * dt;
+}
+}  // namespace
 
 void DiffDrive::TwistCallback(const geometry_msgs::Twist& msg) {
   twist_msg_ = msg;
@@ -96,6 +113,14 @@ void DiffDrive::OnInitialize(const YAML::Node& config) {
 
   // Linear dynamics constraints
   linear_dynamics_.Configure(reader.SubnodeOpt("linear_dynamics", YamlReader::MAP).Node());
+
+  // Actuator/motor dynamics (command latency, deadband, force/torque cap).
+  // Opt-in: an absent or empty subnode leaves these as a pure pass-through so
+  // existing worlds behave identically.
+  linear_actuator_.Configure(
+      reader.SubnodeOpt("linear_actuator", YamlReader::MAP).Node());
+  angular_actuator_.Configure(
+      reader.SubnodeOpt("angular_actuator", YamlReader::MAP).Node());
 
   // Drive mode: "kinematic" (default, ideal SetLinearVelocity) keeps existing
   // worlds unchanged; "friction"/"dynamic" engages the force-based traction
@@ -211,8 +236,31 @@ void DiffDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
 
   // Apply dynamics limits
   double dt = timekeeper.GetStepSize();
-  linear_velocity_ = linear_dynamics_.Limit(linear_velocity_, twist_msg_.linear.x, dt);
-  angular_velocity_ = angular_dynamics_.Limit(angular_velocity_, twist_msg_.angular.z, dt);
+  const ros::Time& now = timekeeper.GetSimTime();
+
+  // Actuator/motor dynamics pipeline, driven by a single sim-time source: push
+  // the cached command into each axis' latency buffer, pull the latency-delayed
+  // command, then apply the deadband before the existing acceleration ramp.
+  linear_actuator_.Push(twist_msg_.linear.x, now);
+  angular_actuator_.Push(twist_msg_.angular.z, now);
+  double linear_cmd =
+      linear_actuator_.ApplyDeadband(linear_actuator_.Pull(now));
+  double angular_cmd =
+      angular_actuator_.ApplyDeadband(angular_actuator_.Pull(now));
+
+  // Acceleration ramp (existing behaviour), then modulate it with the actuator
+  // effort limit: the force/torque cap bounds the achievable per-step
+  // acceleration (a_max = F/m, alpha_max = tau/I). Mass and rotational inertia
+  // are re-read from the Box2D body each step so the variable-mass payload
+  // model is respected.
+  linear_velocity_ =
+      CapAcceleration(linear_velocity_,
+                      linear_dynamics_.Limit(linear_velocity_, linear_cmd, dt),
+                      linear_actuator_.AccelerationCap(b2body->GetMass()), dt);
+  angular_velocity_ = CapAcceleration(
+      angular_velocity_,
+      angular_dynamics_.Limit(angular_velocity_, angular_cmd, dt),
+      angular_actuator_.AccelerationCap(b2body->GetInertia()), dt);
 
   if (use_friction_drive_) {
     // Force-based traction: let the Box2D solver integrate the body under the
@@ -367,6 +415,19 @@ void DiffDrive::ApplyFrictionDrive(b2Body* b2body, double dt) {
 
     b2Vec2 force_local = wheel_friction_.ComputeWheelForce(
         slip_long, slip_lat, normal_load, dt, surface_factor);
+
+    // Cap the per-wheel longitudinal (motor-driven) traction to the actuator
+    // force limit before applying it: the effective traction is the lesser of
+    // available grip and motor force. The lateral component is passive grip
+    // (not motor-driven), so it is left to the friction model. The total
+    // drivetrain force is split evenly across the two drive wheels.
+    double motor_cap = linear_actuator_.ForceCap();
+    if (motor_cap > 0.0) {
+      double per_wheel_cap = 0.5 * motor_cap;
+      force_local.x = static_cast<float>(DynamicsLimits::Saturate(
+          force_local.x, -per_wheel_cap, per_wheel_cap));
+    }
+
     b2Vec2 force_world = b2body->GetWorldVector(force_local);
     b2body->ApplyForce(force_world, wheel_world, true);
   }

@@ -45,6 +45,7 @@
  */
 
 #include <Box2D/Box2D.h>
+#include <flatland_plugins/actuator_dynamics.h>
 #include <flatland_plugins/update_timer.h>
 #include <flatland_plugins/dynamics_limits.h>
 #include <flatland_plugins/wheel_friction_model.h>
@@ -77,6 +78,10 @@ class TricycleDrive : public flatland_server::ModelPlugin {
   double max_steer_angle_;         ///< max abs. steering allowed [rad]
   DynamicsLimits angular_dynamics_; ///< Angular dynamics constraints
   DynamicsLimits linear_dynamics_;  ///< Linear dynamics constraints
+  ActuatorDynamics drive_actuator_;  ///< Drive (front-wheel) actuator dynamics
+                                     /// (latency, deadband, force cap)
+  ActuatorDynamics steer_actuator_;  ///< Steering actuator dynamics
+                                     /// (latency, deadband, torque cap)
 
   WheelFrictionModel wheel_friction_;  ///< Anisotropic wheel-ground friction model
   bool use_friction_drive_ = false;    ///< drive_mode: friction (force-based) vs
