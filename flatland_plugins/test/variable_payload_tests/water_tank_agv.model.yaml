@@ -1,0 +1,30 @@
+# AGV cleaning robot with a draining water tank.
+#
+# The chassis is a 0.5 m circle footprint. The VariablePayload plugin models the
+# water tank on top of the (configured) empty chassis mass: a full 200 kg of
+# water whose center of gravity sits 0.3 m ahead of the body origin, draining at
+# 5% of capacity per second. As the tank empties the body gets lighter and its
+# center of gravity migrates back toward the chassis center, changing handling.
+bodies:
+  - name: base
+    pose: [0, 0, 0]
+    type: dynamic
+    color: [0.2, 0.4, 0.9, 0.75]
+    footprints:
+      - type: circle
+        layers: ["all"]
+        radius: 0.5
+        center: [0.0, 0.0]
+        density: 1.0
+
+plugins:
+  - type: VariablePayload
+    name: water_tank
+    body: base
+    base_mass: 300.0          # empty chassis mass (kg)
+    max_payload_mass: 200.0   # full water tank (kg)
+    payload_center: [0.3, 0.0]  # tank CoG, body local frame (m)
+    initial_fill: 1.0         # starts full
+    fill_rate: -0.05          # drains 5% of capacity per second
+    fill_topic: "fill_level"  # std_msgs/Float64 command override
+    state_topic: "payload_state"  # std_msgs/Float64MultiArray [mass, cx, cy]

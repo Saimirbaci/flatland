@@ -112,6 +112,30 @@ class Body {
   int GetFixturesCount() const;
 
   /**
+   * @brief Read the current Box2D mass properties of the body
+   * @return mass (kg), local center of gravity, and rotational inertia about
+   * the body local origin (kg*m^2)
+   */
+  b2MassData GetMassData() const;
+
+  /**
+   * @brief Override the Box2D mass properties of the body. This is the generic,
+   * plugin-agnostic hook used to model time-varying payload mass and a shifting
+   * center of gravity. It wraps b2Body::SetMassData and never calls
+   * ResetMassData afterward (which would discard the override and recompute
+   * mass from the fixture densities). Note that adding a fixture with non-zero
+   * density via b2Body::CreateFixture also implicitly resets the mass, so an
+   * override only persists while the fixture set is unchanged.
+   * @param[in] mass Total body mass in kilograms, must be > 0 and finite
+   * @param[in] local_center Center of gravity in the body local frame (meters)
+   * @param[in] inertia Rotational inertia about the body local origin (kg*m^2);
+   * pass <= 0 to keep the body's current rotational inertia (only meaningful
+   * when local_center matches the body's current center of mass)
+   * @throw std::invalid_argument if mass is not a positive finite value
+   */
+  void SetMassData(double mass, const b2Vec2 &local_center, double inertia);
+
+  /**
    * @return Color of the body
    */
   const Color &GetColor() const;

@@ -28,6 +28,18 @@ fixed-timestep clock. Everything physical is planar: meters + radians, x / y / y
 - Contact callbacks on plugins: `BeginContact`, `EndContact`, `PreSolve`, `PostSolve`
   (`flatland_plugin.h`). `bumper.cpp` / `bool_sensor.cpp` are working examples.
 
+## Mass & center of gravity
+- Box2D derives a body's mass once from `density × area` per fixture and never revisits it. To make
+  mass/CoG/inertia vary at runtime, use the generic hooks on `Body` (`body.h`/`body.cpp`):
+  `b2MassData GetMassData()` and `SetMassData(double mass, const b2Vec2 &local_center, double inertia)`.
+- `SetMassData` wraps `b2Body::SetMassData` and **never** calls `ResetMassData` (which would discard
+  the override and recompute from fixture densities). `mass` must be positive + finite (throws
+  `std::invalid_argument`); `inertia` is about the body local origin, pass `<= 0` to keep the current
+  value. Adding a non-zero-density fixture also implicitly resets mass, so an override only persists
+  while the fixture set is unchanged.
+- When the CoG moves, shift inertia with the parallel-axis theorem (`I_origin = I_com + m·|c|²`).
+  `flatland_plugins/src/variable_payload.cpp` is the worked example (draining payload mass + CoG).
+
 ## Geometry / transforms
 - `geometry.cpp` (`geometry.h`) has the pose/transform helpers. Keep tf frame ids consistent with
   the model config.
