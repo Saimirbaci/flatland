@@ -44,10 +44,15 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "flatland_viz/flatland_viz.h"
+
 #include <OgreColourValue.h>
+#include <ros/ros.h>
+#include <stdlib.h>
 
 #include <QAction>
 #include <QApplication>
+#include <QCheckBox>
 #include <QCloseEvent>
 #include <QDesktopServices>
 #include <QDir>
@@ -64,20 +69,14 @@
 #include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
-#include <QToolButton>
 #include <QUrl>
 
-#include <ros/ros.h>
-#include <stdlib.h>
-
+#include "flatland_viz/diagnostic_layer_panel.h"
+#include "flatland_viz/flatland_window.h"
 #include "rviz/display.h"
 #include "rviz/render_panel.h"
 #include "rviz/view_manager.h"
 #include "rviz/visualization_manager.h"
-
-#include "flatland_viz/flatland_window.h"
-
-#include "flatland_viz/flatland_viz.h"
 
 // Constructor.
 FlatlandViz::FlatlandViz(FlatlandWindow* parent) : QWidget((QWidget*)parent) {
@@ -154,6 +153,12 @@ FlatlandViz::FlatlandViz(FlatlandWindow* parent) : QWidget((QWidget*)parent) {
   }
   interactive_markers_->subProp("Update Topic")
       ->setValue("/interactive_model_markers/update");
+
+  // Diagnostic overlays (occupancy, laser, trajectories, friction) + the dock
+  // panel of show/hide toggles. Created after the manager is initialized so the
+  // displays attach to a live VisualizationManager.
+  show_dynamic_obstacles_ = true;
+  initDiagnosticOverlays();
 
   // Subscribe to debug topics topic
   ros::NodeHandle n;
@@ -374,6 +379,82 @@ void FlatlandViz::setFullScreen(bool full_screen) {
   show();
 }
 
+void FlatlandViz::initDiagnosticOverlays() {
+  // rviz/Map of the static occupancy layer (published latched by the server on
+  // a stable, name-agnostic topic).
+  occupancy_display_ = manager_->createDisplay("rviz/Map", "Occupancy", true);
+  if (occupancy_display_ == nullptr) {
+    ROS_FATAL("Occupancy map display failed to instantiate");
+    exit(1);
+  }
+  occupancy_display_->subProp("Topic")->setValue("/flatland_server/occupancy");
+  occupancy_display_->subProp("Alpha")->setValue(0.7);
+
+  // rviz/LaserScan on the conventional /scan topic (per-robot; the user can
+  // retarget it from the display properties for namespaced robots).
+  laser_display_ =
+      manager_->createDisplay("rviz/LaserScan", "Laser Scan", true);
+  if (laser_display_ == nullptr) {
+    ROS_FATAL("LaserScan display failed to instantiate");
+    exit(1);
+  }
+  laser_display_->subProp("Topic")->setValue("/scan");
+
+  // Two rviz/Path displays for planned vs actual trajectories, distinctly
+  // coloured (green = planned, orange = actual).
+  planned_path_display_ =
+      manager_->createDisplay("rviz/Path", "Planned Trajectory", true);
+  if (planned_path_display_ == nullptr) {
+    ROS_FATAL("Planned path display failed to instantiate");
+    exit(1);
+  }
+  planned_path_display_->subProp("Topic")->setValue("/trajectory/planned");
+  planned_path_display_->subProp("Color")->setValue(QColor(0, 255, 0));
+
+  actual_path_display_ =
+      manager_->createDisplay("rviz/Path", "Actual Trajectory", true);
+  if (actual_path_display_ == nullptr) {
+    ROS_FATAL("Actual path display failed to instantiate");
+    exit(1);
+  }
+  actual_path_display_->subProp("Topic")->setValue("/trajectory/actual");
+  actual_path_display_->subProp("Color")->setValue(QColor(255, 128, 0));
+
+  // rviz/MarkerArray for the friction-region overlay (latched by the server).
+  friction_display_ =
+      manager_->createDisplay("rviz/MarkerArray", "Friction Regions", true);
+  if (friction_display_ == nullptr) {
+    ROS_FATAL("Friction regions display failed to instantiate");
+    exit(1);
+  }
+  friction_display_->subProp("Marker Topic")
+      ->setValue("/flatland_server/debug/friction_regions");
+
+  // Dock panel of show/hide toggles, one row per overlay.
+  diagnostic_panel_ = new DiagnosticLayerPanel(parent_);
+  diagnostic_panel_->addLayer("Occupancy / Costmap", occupancy_display_, true);
+  diagnostic_panel_->addLayer("Laser Scan", laser_display_, true);
+  diagnostic_panel_->addLayer("Planned Trajectory", planned_path_display_,
+                              true);
+  diagnostic_panel_->addLayer("Actual Trajectory", actual_path_display_, true);
+  diagnostic_panel_->addLayer("Friction Regions", friction_display_, true);
+  QCheckBox* dynamic_obstacles_toggle = diagnostic_panel_->addToggle(
+      "Dynamic Obstacles", show_dynamic_obstacles_);
+  connect(dynamic_obstacles_toggle, &QCheckBox::toggled, this,
+          &FlatlandViz::setDynamicObstaclesVisible);
+
+  parent_->addDockWidget(Qt::RightDockWidgetArea, diagnostic_panel_);
+}
+
+void FlatlandViz::setDynamicObstaclesVisible(bool visible) {
+  show_dynamic_obstacles_ = visible;
+  for (auto& display : debug_displays_) {
+    if (display.second != nullptr) {
+      display.second->setEnabled(visible);
+    }
+  }
+}
+
 void FlatlandViz::RecieveDebugTopics(const flatland_msgs::DebugTopicList& msg) {
   std::vector<std::string> topics = msg.topics;
 
@@ -398,6 +479,9 @@ void FlatlandViz::RecieveDebugTopics(const flatland_msgs::DebugTopicList& msg) {
       QString topic_qt = QString::fromLocal8Bit(
           (std::string("/flatland_server/debug/") + topic).c_str());
       debug_displays_[topic]->subProp("Marker Topic")->setValue(topic_qt);
+      // Honour the panel's dynamic-obstacles toggle for newly-discovered
+      // topics.
+      debug_displays_[topic]->setEnabled(show_dynamic_obstacles_);
     }
   }
 }

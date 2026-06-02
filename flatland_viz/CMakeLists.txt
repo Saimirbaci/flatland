@@ -92,6 +92,8 @@ add_executable(flatland_viz
   src/flatland_viz_node.cpp
   src/flatland_viz.cpp
   include/flatland_viz/flatland_viz.h
+  src/diagnostic_layer_panel.cpp
+  include/flatland_viz/diagnostic_layer_panel.h
   src/flatland_window.cpp
   include/flatland_viz/flatland_window.h
   src/load_model_dialog.cpp

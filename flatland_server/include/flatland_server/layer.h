@@ -52,7 +52,9 @@
 #include <flatland_server/collision_filter_registry.h>
 #include <flatland_server/entity.h>
 #include <flatland_server/types.h>
+#include <nav_msgs/OccupancyGrid.h>
 #include <yaml-cpp/yaml.h>
+
 #include <opencv2/opencv.hpp>
 #include <string>
 
@@ -66,9 +68,15 @@ class Layer : public Entity {
  public:
   std::vector<std::string> names_;  ///< list of layer names
 
-  Body *body_ = nullptr;
-  CollisionFilterRegistry *cfr_;  ///< collision filter registry
+  Body* body_ = nullptr;
+  CollisionFilterRegistry* cfr_;  ///< collision filter registry
   std::string viz_name_;          ///< for visualization
+
+  bool has_occupancy_grid_ = false;  ///< whether occupancy_grid_ is built
+  nav_msgs::OccupancyGrid occupancy_grid_;  ///< map-frame occupancy view of the
+                                            /// layer bitmap, for the rviz Map
+                                            /// diagnostic overlay; only built
+                                            /// for image-based layers
 
   /**
    * @brief Constructor for the Layer class for initialization using a image
@@ -85,10 +93,10 @@ class Layer : public Entity {
    * @param[in] resolution Resolution of the map image in meters per pixel
    * @param[in] properties A YAML node containing properties for plugins to use
    */
-  Layer(b2World *physics_world, CollisionFilterRegistry *cfr,
-        const std::vector<std::string> &names, const Color &color,
-        const Pose &origin, const cv::Mat &bitmap, double occupied_thresh,
-        double resolution, const YAML::Node &properties);
+  Layer(b2World* physics_world, CollisionFilterRegistry* cfr,
+        const std::vector<std::string>& names, const Color& color,
+        const Pose& origin, const cv::Mat& bitmap, double occupied_thresh,
+        double resolution, const YAML::Node& properties);
 
   /**
    * @brief Constructor for the Layer class for initialization using line
@@ -105,23 +113,23 @@ class Layer : public Entity {
    * the same way as resolution
    * @param[in] properties A YAML node containing properties for plugins to use
    */
-  Layer(b2World *physics_world, CollisionFilterRegistry *cfr,
-        const std::vector<std::string> &names, const Color &color,
-        const Pose &origin, const std::vector<LineSegment> &line_segments,
-        double scale, const YAML::Node &properties);
+  Layer(b2World* physics_world, CollisionFilterRegistry* cfr,
+        const std::vector<std::string>& names, const Color& color,
+        const Pose& origin, const std::vector<LineSegment>& line_segments,
+        double scale, const YAML::Node& properties);
 
   /**
-  * @brief Constructor for the Layer class for initialization with no static
-  * map in it
-  * @param[in] physics_world Pointer to the box2d physics world
-  * @param[in] cfr Collision filter registry
-  * @param[in] names A list of names for the layer, the first name is used
-  * for the name of the body
-  * @param[in] properties A YAML node containing properties for plugins to use
-  */
-  Layer(b2World *physics_world, CollisionFilterRegistry *cfr,
-        const std::vector<std::string> &names, const Color &color,
-        const YAML::Node &properties);
+   * @brief Constructor for the Layer class for initialization with no static
+   * map in it
+   * @param[in] physics_world Pointer to the box2d physics world
+   * @param[in] cfr Collision filter registry
+   * @param[in] names A list of names for the layer, the first name is used
+   * for the name of the body
+   * @param[in] properties A YAML node containing properties for plugins to use
+   */
+  Layer(b2World* physics_world, CollisionFilterRegistry* cfr,
+        const std::vector<std::string>& names, const Color& color,
+        const YAML::Node& properties);
 
   /**
    * @brief Destructor for the layer class
@@ -131,14 +139,14 @@ class Layer : public Entity {
   /**
    * @return The list of names the layer has
    */
-  const std::vector<std::string> &GetNames() const;
+  const std::vector<std::string>& GetNames() const;
 
   /**
    * @return The collision filter registrar
    */
-  const CollisionFilterRegistry *GetCfr() const;
+  const CollisionFilterRegistry* GetCfr() const;
 
-  Body *GetBody();
+  Body* GetBody();
 
   /**
    * @brief Return the type of entity
@@ -152,8 +160,38 @@ class Layer : public Entity {
    * @param[in] occupied_thresh Threshold indicating obstacle if above
    * @param[in] resolution Resolution of the map image in meters per pixel
    */
-  void LoadFromBitmap(const cv::Mat &bitmap, double occupied_thresh,
+  void LoadFromBitmap(const cv::Mat& bitmap, double occupied_thresh,
                       double resolution);
+
+  /**
+   * @brief Build a map-frame nav_msgs/OccupancyGrid view of the layer bitmap.
+   *
+   * Thresholds the bitmap at @p occupied_thresh (occupied -> 100, free -> 0)
+   * and flips it vertically so grid row 0 is the lower-left cell, matching the
+   * ROS OccupancyGrid convention and the Box2D edge transform used in
+   * LoadFromBitmap. The grid is stored on the layer and published once
+   * (latched) by World::PublishDiagnostics for the rviz Map diagnostic overlay.
+   * This does no physics work and is never called from the step loop.
+   *
+   * @param[in] bitmap OpenCV image (CV_32FC1, values in [0, 1])
+   * @param[in] occupied_thresh Threshold at/above which a cell is occupied
+   * @param[in] resolution Resolution of the map image in meters per pixel
+   * @param[in] origin World pose of the bitmap lower-left corner (x, y, theta)
+   */
+  void BuildOccupancyGrid(const cv::Mat& bitmap, double occupied_thresh,
+                          double resolution, const Pose& origin);
+
+  /**
+   * @return whether this layer has a published-able occupancy grid
+   */
+  bool HasOccupancyGrid() const { return has_occupancy_grid_; }
+
+  /**
+   * @return the layer's occupancy grid (only valid when HasOccupancyGrid())
+   */
+  const nav_msgs::OccupancyGrid& GetOccupancyGrid() const {
+    return occupancy_grid_;
+  }
 
   /**
    * @brief Visualize layer for debugging purposes
@@ -171,8 +209,8 @@ class Layer : public Entity {
    * @param[in] file_path Path to the file
    * @param[out] line_segments Line segments obtained from the file
    */
-  static void ReadLineSegmentsFile(const std::string &file_path,
-                                   std::vector<LineSegment> &line_segments);
+  static void ReadLineSegmentsFile(const std::string& file_path,
+                                   std::vector<LineSegment>& line_segments);
 
   /**
    * @brief Factory method to instantiate a layer, throws exceptions upon
@@ -188,10 +226,10 @@ class Layer : public Entity {
    * @param[in] properties A YAML node containing properties for plugins to use
    * @return A new layer
    */
-  static Layer *MakeLayer(b2World *physics_world, CollisionFilterRegistry *cfr,
-                          const std::string &map_path,
-                          const std::vector<std::string> &names,
-                          const Color &color, const YAML::Node &properties);
+  static Layer* MakeLayer(b2World* physics_world, CollisionFilterRegistry* cfr,
+                          const std::string& map_path,
+                          const std::vector<std::string>& names,
+                          const Color& color, const YAML::Node& properties);
 };
-};      // namespace flatland_server
+};  // namespace flatland_server
 #endif  // FLATLAND_SERVER_WORLD_H

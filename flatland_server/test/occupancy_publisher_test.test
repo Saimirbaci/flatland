@@ -1,0 +1,8 @@
+<!--
+Test launchfile for occupancy_publisher_test
+
+Runs rosmaster so the latched OccupancyGrid publisher/subscriber can be tested.
+-->
+<launch>
+  <test pkg="flatland_server" type="occupancy_publisher_test" test-name="occupancy_publisher_test" />
+</launch>

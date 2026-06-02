@@ -49,6 +49,7 @@
 #include <flatland_server/surface_friction_field.h>
 #include <flatland_server/types.h>
 #include <ros/ros.h>
+
 #include <algorithm>
 #include <cmath>
 #include <opencv2/opencv.hpp>
@@ -63,7 +64,7 @@ namespace flatland_server {
 
 constexpr double SurfaceFrictionField::kDefaultMinFactor;
 
-SurfaceFrictionField::SurfaceFrictionField(const std::vector<double> &factors,
+SurfaceFrictionField::SurfaceFrictionField(const std::vector<double>& factors,
                                            int width, int height,
                                            double resolution, double origin_x,
                                            double origin_y, double min_factor)
@@ -76,20 +77,19 @@ SurfaceFrictionField::SurfaceFrictionField(const std::vector<double> &factors,
       origin_y_(origin_y),
       min_factor_(min_factor) {
   if (width_ < 1 || height_ < 1) {
-    throw Exception(
-        "SurfaceFrictionField: grid dimensions must be >= 1 (got " +
-        std::to_string(width_) + "x" + std::to_string(height_) + ")");
+    throw Exception("SurfaceFrictionField: grid dimensions must be >= 1 (got " +
+                    std::to_string(width_) + "x" + std::to_string(height_) +
+                    ")");
   }
   if (resolution_ <= 0.0) {
-    throw Exception(
-        "SurfaceFrictionField: resolution must be > 0 (got " +
-        std::to_string(resolution_) + ")");
+    throw Exception("SurfaceFrictionField: resolution must be > 0 (got " +
+                    std::to_string(resolution_) + ")");
   }
   if (grid_.size() != static_cast<size_t>(width_) * height_) {
-    throw Exception(
-        "SurfaceFrictionField: grid size " + std::to_string(grid_.size()) +
-        " does not match width*height " +
-        std::to_string(static_cast<size_t>(width_) * height_));
+    throw Exception("SurfaceFrictionField: grid size " +
+                    std::to_string(grid_.size()) +
+                    " does not match width*height " +
+                    std::to_string(static_cast<size_t>(width_) * height_));
   }
 }
 
@@ -100,7 +100,7 @@ double SurfaceFrictionField::CellClamped(int col, int row) const {
 }
 
 double SurfaceFrictionField::GetFrictionFactor(
-    const b2Vec2 &world_point) const {
+    const b2Vec2& world_point) const {
   // A disabled field (no surface_friction block) never alters traction.
   if (!enabled_) {
     return 1.0;
@@ -143,7 +143,7 @@ double SurfaceFrictionField::GetFrictionFactor(
 }
 
 SurfaceFrictionField SurfaceFrictionField::FromConfig(
-    YamlReader &reader, const boost::filesystem::path &world_dir) {
+    YamlReader& reader, const boost::filesystem::path& world_dir) {
   // No surface_friction block -> disabled field (factor 1.0 everywhere).
   if (reader.IsNodeNull()) {
     return SurfaceFrictionField();
@@ -157,8 +157,7 @@ SurfaceFrictionField SurfaceFrictionField::FromConfig(
   Vec2 origin = reader.GetVec2("origin", Vec2(0, 0));
   const double mu_min = reader.Get<double>("mu_min", 0.3);
   const double mu_max = reader.Get<double>("mu_max", 1.0);
-  const double min_factor =
-      reader.Get<double>("min_factor", kDefaultMinFactor);
+  const double min_factor = reader.Get<double>("min_factor", kDefaultMinFactor);
 
   boost::filesystem::path image_path(reader.Get<std::string>("map"));
   reader.EnsureAccessedAllKeys();
@@ -175,8 +174,7 @@ SurfaceFrictionField SurfaceFrictionField::FromConfig(
                  "(mu_min=%.3f mu_max=%.3f res=%.4f)",
                  image_path.string().c_str(), mu_min, mu_max, resolution);
 
-  cv::Mat image =
-      cv::imread(image_path.string(), FLATLAND_FRICTION_GREYSCALE);
+  cv::Mat image = cv::imread(image_path.string(), FLATLAND_FRICTION_GREYSCALE);
   if (image.empty()) {
     throw YAMLException("Failed to load surface_friction map " +
                         Q(image_path.string()));
@@ -199,6 +197,84 @@ SurfaceFrictionField SurfaceFrictionField::FromConfig(
 
   return SurfaceFrictionField(factors, width, height, resolution, origin.x,
                               origin.y, min_factor);
+}
+
+visualization_msgs::MarkerArray SurfaceFrictionField::ToMarkerArray(
+    const std::string& frame_id, const std::string& ns,
+    size_t max_points) const {
+  visualization_msgs::MarkerArray array;
+
+  // Always lead with a DELETEALL so re-publishing replaces the previous set and
+  // a disabled field clears the overlay entirely.
+  visualization_msgs::Marker clear;
+  clear.header.frame_id = frame_id;
+  clear.ns = ns;
+  clear.action = visualization_msgs::Marker::DELETEALL;
+  array.markers.push_back(clear);
+
+  if (!enabled_ || grid_.empty()) {
+    return array;
+  }
+
+  // The nominal (driest) multiplier present is the baseline; cells at that
+  // value are ordinary floor and not worth drawing. Anything below it is a
+  // wet/spill region we want to highlight.
+  const double max_factor = *std::max_element(grid_.begin(), grid_.end());
+  const double span = std::max(1e-9, max_factor - min_factor_);
+
+  // Choose a cell stride so the emitted point count stays under max_points.
+  const size_t total_cells = grid_.size();
+  size_t stride = 1;
+  if (max_points > 0 && total_cells > max_points) {
+    // ceil(sqrt(total/max)) keeps the 2D thinning roughly uniform in x and y.
+    const double ratio = static_cast<double>(total_cells) / max_points;
+    stride = static_cast<size_t>(std::ceil(std::sqrt(ratio)));
+    ROS_WARN_NAMED("SurfaceFrictionField",
+                   "friction region overlay downsampled by stride %zu "
+                   "(%zu cells > %zu point budget)",
+                   stride, total_cells, max_points);
+  }
+
+  visualization_msgs::Marker marker;
+  marker.header.frame_id = frame_id;
+  marker.ns = ns;
+  marker.id = 0;
+  marker.type = visualization_msgs::Marker::CUBE_LIST;
+  marker.action = visualization_msgs::Marker::ADD;
+  marker.pose.orientation.w = 1.0;
+  marker.scale.x = resolution_ * stride;
+  marker.scale.y = resolution_ * stride;
+  marker.scale.z = 0.02;
+
+  for (int row = 0; row < height_; row += static_cast<int>(stride)) {
+    for (int col = 0; col < width_; col += static_cast<int>(stride)) {
+      const double factor = grid_[static_cast<size_t>(row) * width_ + col];
+      // Skip nominal/dry cells; only render the slippery patches.
+      if (factor >= max_factor - 1e-6) {
+        continue;
+      }
+
+      geometry_msgs::Point p;
+      p.x = origin_x_ + (col + 0.5) * resolution_;
+      // Rows are stored top-down (row 0 = max y), matching GetFrictionFactor.
+      p.y = origin_y_ + (height_ - row - 0.5) * resolution_;
+      p.z = 0.0;
+      marker.points.push_back(p);
+
+      // green (grip) -> red (slip) as the multiplier drops toward min_factor_.
+      const double t =
+          std::max(0.0, std::min(1.0, (factor - min_factor_) / span));
+      std_msgs::ColorRGBA color;
+      color.r = static_cast<float>(1.0 - t);
+      color.g = static_cast<float>(t);
+      color.b = 0.0f;
+      color.a = 0.5f;
+      marker.colors.push_back(color);
+    }
+  }
+
+  array.markers.push_back(marker);
+  return array;
 }
 
 }  // namespace flatland_server

@@ -4,6 +4,15 @@ Changelog for package flatland_server
 
 Forthcoming
 -----------
+* Diagnostic overlay publishers for the modernized flatland_viz. Each
+  image-based layer now also publishes a latched ``nav_msgs/OccupancyGrid``
+  (``/flatland_server/layers/<name>/occupancy`` plus the stable
+  ``/flatland_server/occupancy``) so the static map renders as an rviz Map
+  display, and a configured ``surface_friction`` field publishes a latched
+  colour-mapped ``visualization_msgs/MarkerArray`` of its low-traction regions
+  (``/flatland_server/debug/friction_regions``). Both are built once at
+  world-load time via ``World::PublishDiagnostics`` (gated on ``use_rviz``) and
+  cost nothing per physics step. See ``doc/diagnostic_overlays.md``.
 * Deterministic / reproducible runs: added a central seeded RNG authority
   (``flatland_server/random.h`` ``RngManager``) and a ``seed`` parameter. A run
   is now byte-reproducible given the same seed, world YAML and step size.

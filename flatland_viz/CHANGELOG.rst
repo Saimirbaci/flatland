@@ -2,6 +2,16 @@
 Changelog for package flatland_viz
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Layered diagnostic overlays. A new dockable "Diagnostic Layers" panel
+  (``DiagnosticLayerPanel``) adds per-overlay show/hide checkboxes wired to
+  rviz Displays created in ``FlatlandViz``: an occupancy/costmap Map, a
+  LaserScan, planned vs actual trajectory Paths (distinctly coloured), a
+  friction-region MarkerArray, and an aggregate toggle over the auto-discovered
+  dynamic-obstacle debug markers. Toggling a box only flips a display's enabled
+  state; no data plumbing is duplicated.
+
 1.4.1 (2023-11-24)
 ------------------
 * CMake version required bump to fix ros build farm warning
