@@ -1,4 +1,6 @@
+#include <flatland_plugins/fault_injection_registry.h>
 #include <flatland_plugins/gps.h>
+#include <flatland_server/random.h>
 #include <pluginlib/class_list_macros.h>
 
 using namespace flatland_server;
@@ -28,8 +30,29 @@ void Gps::BeforePhysicsStep(const Timekeeper &timekeeper) {
   // only compute and publish when the number of subscribers is not zero
   if (fix_publisher_.getNumSubscribers() > 0) {
     UpdateFix();
+
+    // Fault perturbations applied to the NORMAL fix only, scaled by severity.
+    // No active effect -> no change; the label is never written into the fix.
+    auto& reg = FaultInjectionRegistry::Get();
+    FaultEffect bias = reg.GetEffect(fault_key_, FaultKind::kSensorBias);
+    if (bias.active) {
+      double b = bias.severity * bias.Param("bias");
+      gps_fix_.latitude += b;
+      gps_fix_.longitude += b;
+    }
+
+    bool skip = false;
+    FaultEffect drop = reg.GetEffect(fault_key_, FaultKind::kDropout);
+    if (drop.active) {
+      double p = drop.severity * drop.Param("dropout_prob", 1.0);
+      std::uniform_real_distribution<double> u(0.0, 1.0);
+      if (u(rng_) < p) skip = true;
+    }
+
     gps_fix_.header.stamp = timekeeper.GetSimTime();
-    fix_publisher_.publish(gps_fix_);
+    if (!skip) {
+      fix_publisher_.publish(gps_fix_);
+    }
   }
 
   if (broadcast_tf_) {
@@ -103,6 +126,11 @@ void Gps::ParseParameters(const YAML::Node &config) {
   if (!body_) {
     throw YAMLException("Cannot find body with name " + body_name);
   }
+
+  // Stable key for the FaultInjectionRegistry + deterministic RNG for dropout.
+  fault_key_ = ComponentKey(GetModel()->GetName(), GetName());
+  rng_ = flatland_server::RngManager::Get().DeriveEngine(GetModel()->GetName() +
+                                                         "/" + GetName());
 
   std::string parent_frame_id =
       tf::resolve("", GetModel()->NameSpaceTF(body_->GetName()));

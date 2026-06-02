@@ -24,6 +24,8 @@ add_message_files(FILES
   Collision.msg
   Collisions.msg
   Vector2.msg
+  FaultGroundTruth.msg
+  FaultGroundTruthArray.msg
 )
 
 add_service_files(FILES

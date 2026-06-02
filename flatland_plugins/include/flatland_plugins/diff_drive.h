@@ -98,6 +98,8 @@ class DiffDrive : public flatland_server::ModelPlugin {
   std::default_random_engine rng_;
   std::array<std::normal_distribution<double>, 6> noise_gen_;
 
+  std::string fault_key_;  ///< registry component key (model/plugin)
+
   /**
    * @name          OnInitialize
    * @brief         override the BeforePhysicsStep method

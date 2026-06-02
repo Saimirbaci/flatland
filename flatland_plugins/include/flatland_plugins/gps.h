@@ -6,6 +6,8 @@
 #include <sensor_msgs/NavSatFix.h>
 #include <tf/transform_broadcaster.h>
 #include <Eigen/Dense>
+#include <random>
+#include <string>
 
 #ifndef FLATLAND_PLUGINS_GPS_H
 #define FLATLAND_PLUGINS_GPS_H
@@ -46,6 +48,9 @@ class Gps : public ModelPlugin {
   UpdateTimer update_timer_;                 ///< for controlling update rate
 
   Eigen::Matrix3f m_body_to_gps_;  ///< tf from body to GPS
+
+  std::string fault_key_;           ///< registry component key (model/plugin)
+  std::default_random_engine rng_;  ///< RNG for the dropout fault
 
   /**
    * @brief Initialization for the plugin

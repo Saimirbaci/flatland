@@ -44,6 +44,7 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <flatland_plugins/fault_injection_registry.h>
 #include <flatland_plugins/laser.h>
 #include <flatland_server/collision_filter_registry.h>
 #include <flatland_server/exceptions.h>
@@ -156,9 +157,18 @@ void Laser::BeforePhysicsStep(const Timekeeper& timekeeper) {
         std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count());
 
     // END_PROFILE(timekeeper, "compute laser range");
+
+    // Fault perturbations applied to the NORMAL scan only, on the main thread
+    // (after the ThreadPool workers finish) so no worker ever touches the
+    // registry. No active effect -> the scan is unchanged. The label is never
+    // written into the scan.
+    bool skip = ApplyLaserFaults();
+
     laser_scan_.header.stamp = timekeeper.GetSimTime();
-    scan_publisher_.publish(laser_scan_);
-    publications_++;
+    if (!skip) {
+      scan_publisher_.publish(laser_scan_);
+      publications_++;
+    }
   }
 
   if (broadcast_tf_) {
@@ -274,6 +284,61 @@ void Laser::ComputeLaserRanges() {
   }
 }
 
+bool Laser::ApplyLaserFaults() {
+  auto& reg = FaultInjectionRegistry::Get();
+  const size_t n = laser_scan_.ranges.size();
+
+  // Per-sector occlusion: NaN the ranges inside an angular window. The window
+  // half-width scales with severity so the occlusion ramps in.
+  FaultEffect occ =
+      reg.GetEffect(fault_key_, FaultKind::kLaserSectorOcclusion);
+  if (occ.active) {
+    double center = occ.Param("sector_center");
+    double half = 0.5 * occ.severity * occ.Param("sector_width");
+    for (size_t i = 0; i < n; i++) {
+      double angle = min_angle_ + static_cast<double>(i) * increment_;
+      if (std::fabs(angle - center) <= half) {
+        laser_scan_.ranges[i] = NAN;
+      }
+    }
+  }
+
+  // Noise inflation: add zero-mean Gaussian noise (std scaled by severity) to
+  // the finite returns.
+  FaultEffect ni = reg.GetEffect(fault_key_, FaultKind::kNoiseInflation);
+  if (ni.active) {
+    std::normal_distribution<float> n_gen(
+        0.0f, static_cast<float>(ni.severity * ni.Param("noise")));
+    for (size_t i = 0; i < n; i++) {
+      if (std::isfinite(laser_scan_.ranges[i])) {
+        laser_scan_.ranges[i] += n_gen(rng_);
+      }
+    }
+  }
+
+  // Stuck/frozen: republish the previous scan.
+  FaultEffect stuck = reg.GetEffect(fault_key_, FaultKind::kStuck);
+  if (stuck.active && last_scan_valid_ &&
+      last_ranges_.size() == laser_scan_.ranges.size()) {
+    laser_scan_.ranges = last_ranges_;
+  }
+
+  // Cache the (possibly perturbed) scan so the stuck fault freezes to it.
+  last_ranges_ = laser_scan_.ranges;
+  last_scan_valid_ = true;
+
+  // Dropout: probabilistically drop the whole scan.
+  FaultEffect drop = reg.GetEffect(fault_key_, FaultKind::kDropout);
+  if (drop.active) {
+    double p = drop.severity * drop.Param("dropout_prob", 1.0);
+    std::uniform_real_distribution<double> u(0.0, 1.0);
+    if (u(rng_) < p) {
+      return true;
+    }
+  }
+  return false;
+}
+
 float LaserCallback::ReportFixture(b2Fixture* fixture, const b2Vec2& point,
                                    const b2Vec2& normal, float fraction) {
   uint16_t category_bits = fixture->GetFilterData().categoryBits;
@@ -358,6 +423,9 @@ void Laser::ParseParameters(const YAML::Node& config) {
   rng_ = flatland_server::RngManager::Get().DeriveEngine(GetModel()->GetName() +
                                                          "/" + GetName());
   noise_gen_ = std::normal_distribution<float>(0.0, noise_std_dev_);
+
+  // Stable key the FaultInjectionRegistry uses to address this sensor.
+  fault_key_ = ComponentKey(GetModel()->GetName(), GetName());
 
   ROS_INFO(  //"LaserPlugin",
       "Laser %s params: topic(%s) body(%s, %p) origin(%f,%f,%f) upside_down(%d)"

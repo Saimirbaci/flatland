@@ -1,0 +1,12 @@
+<!--
+Test launchfile for fault_injector_test
+
+Runs rosmaster so the FaultInjector can advertise the reserved ground-truth
+topic and the sensor plugins can publish their in-band topics, which the test
+subscribes to and asserts over.
+-->
+<launch>
+  <param name="use_sim_time" value="true"/>
+  <test pkg="flatland_plugins" type="fault_injector_test"
+        test-name="fault_injector_test" time-limit="120.0"/>
+</launch>
