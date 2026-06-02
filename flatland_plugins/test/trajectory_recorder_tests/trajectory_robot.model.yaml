@@ -1,0 +1,24 @@
+# Minimal robot for the TrajectoryRecorder test: a single dynamic body whose
+# pose the recorder samples. max_length is small so the length cap is exercised
+# in a handful of steps.
+bodies:
+  - name: base
+    pose: [0, 0, 0]
+    type: dynamic
+    color: [1, 1, 1, 1]
+    footprints:
+      - type: circle
+        layers: ["static"]
+        radius: 0.2
+        center: [0.0, 0.0]
+        density: 1.0
+
+plugins:
+  - type: TrajectoryRecorder
+    name: recorder
+    body: base
+    frame_id: map
+    max_length: 5
+    actual_topic: trajectory/actual
+    planned_topic: trajectory/planned
+    planned_input_topic: planned_in

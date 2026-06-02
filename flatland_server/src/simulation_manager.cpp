@@ -45,16 +45,18 @@
  */
 
 #include "flatland_server/simulation_manager.h"
+
 #include <flatland_server/debug_visualization.h>
 #include <flatland_server/layer.h>
 #include <flatland_server/model.h>
 #include <flatland_server/service_manager.h>
 #include <flatland_server/world.h>
 #include <ros/ros.h>
+
+#include <chrono>
 #include <exception>
 #include <limits>
 #include <string>
-#include <chrono>
 #include <thread>
 
 namespace flatland_server {
@@ -92,7 +94,12 @@ void SimulationManager::Main(bool benchmark) {
     return;
   }
 
-  if (show_viz_) world_->DebugVisualize();
+  if (show_viz_) {
+    world_->DebugVisualize();
+    // Latched, one-shot diagnostic overlays (occupancy grids, friction
+    // regions). Only needed when visualizing; costs nothing per step.
+    world_->PublishDiagnostics();
+  }
 
   iterations_ = 0;
   double filtered_cycle_util = 0;
@@ -113,7 +120,8 @@ void SimulationManager::Main(bool benchmark) {
       throttle ? step_size_ / real_time_factor_ : 0.0);
 
   // integrated ros::WallRate logic here to expose internals for benchmarking
-  std::chrono::duration<double> start = std::chrono::steady_clock::now().time_since_epoch();
+  std::chrono::duration<double> start =
+      std::chrono::steady_clock::now().time_since_epoch();
   std::chrono::duration<double> actual_cycle_time(0.0);
   using seconds_d = std::chrono::duration<double, std::ratio<1, 1>>;
   double seconds_taken = 0;
@@ -122,12 +130,12 @@ void SimulationManager::Main(bool benchmark) {
   // published output is identical regardless of how fast the host runs.
   double last_viz_sim_time = -std::numeric_limits<double>::infinity();
 
-  ROS_INFO_NAMED("SimMan",
-                 "Simulation loop started (real_time_factor=%.3f%s)",
+  ROS_INFO_NAMED("SimMan", "Simulation loop started (real_time_factor=%.3f%s)",
                  real_time_factor_, throttle ? "" : ", unthrottled");
 
   while (ros::ok() && run_simulator_) {
-    std::chrono::duration<double> update_start = std::chrono::steady_clock::now().time_since_epoch();
+    std::chrono::duration<double> update_start =
+        std::chrono::steady_clock::now().time_since_epoch();
 
     world_->Update(timekeeper_);  // Step physics by one fixed step_size
 
@@ -143,13 +151,17 @@ void SimulationManager::Main(bool benchmark) {
 
     ros::spinOnce();
 
-    seconds_taken += (seconds_d(std::chrono::steady_clock::now().time_since_epoch()) - update_start).count();
+    seconds_taken +=
+        (seconds_d(std::chrono::steady_clock::now().time_since_epoch()) -
+         update_start)
+            .count();
 
     // Pace to the real-time factor, unless running unthrottled. This only
     // affects wall-clock timing, never the number of physics steps.
     {
       std::chrono::duration<double> expected_end = start + expected_cycle_time;
-      std::chrono::duration<double> actual_end = std::chrono::steady_clock::now().time_since_epoch();
+      std::chrono::duration<double> actual_end =
+          std::chrono::steady_clock::now().time_since_epoch();
       std::chrono::duration<double> sleep_time = expected_end - actual_end;
       actual_cycle_time = actual_end - start;
       start = expected_end;  // make sure to reset our start time
@@ -186,7 +198,9 @@ void SimulationManager::Main(bool benchmark) {
         "utilization: min %.1f%% max %.1f%% ave %.1f%%  factor: %.1f",
         min_cycle_util, max_cycle_util, filtered_cycle_util, factor);
   }
-  // std::cout << "Simulation loop ended. " << iterations_ << " iterations in " << seconds_taken << " seconds, " <<  (double)iterations_/seconds_taken << " iterations/sec" << std::endl;
+  // std::cout << "Simulation loop ended. " << iterations_ << " iterations in "
+  // << seconds_taken << " seconds, " <<  (double)iterations_/seconds_taken << "
+  // iterations/sec" << std::endl;
 
   delete world_;
 }

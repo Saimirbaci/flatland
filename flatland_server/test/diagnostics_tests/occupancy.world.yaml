@@ -1,0 +1,8 @@
+# Minimal world for the occupancy-overlay publisher test. A single image-based
+# layer (the 5x5 map shared with the load_world tests), no models or plugins, so
+# the test exercises only Layer::BuildOccupancyGrid + World::PublishDiagnostics.
+properties: {}
+layers:
+  - name: "static"
+    map: "../load_world_tests/simple_test_A/map.yaml"
+    color: [0, 1, 0, 1]

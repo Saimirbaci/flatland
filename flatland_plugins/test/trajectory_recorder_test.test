@@ -1,0 +1,9 @@
+<!--
+Test launchfile for trajectory_recorder_test
+
+This file is used so that rosmaster is running when the test is executed,
+in order to test publish/subscribe of the actual/planned Path topics.
+-->
+<launch>
+  <test pkg="flatland_plugins" type="trajectory_recorder_test" test-name="trajectory_recorder_test" />
+</launch>

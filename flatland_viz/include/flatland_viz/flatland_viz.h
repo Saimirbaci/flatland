@@ -48,6 +48,7 @@
 #define FLATLAND_VIZ_FLATLAND_VIZ_H
 
 #include <ros/ros.h>
+
 #include <QAction>
 #include <QActionGroup>
 #include <QList>
@@ -83,18 +84,19 @@ class Display;
 class RenderPanel;
 class VisualizationManager;
 class WidgetGeometryChangeDetector;
-}
+}  // namespace rviz
 
 class FlatlandWindow;
+class DiagnosticLayerPanel;
 
 class FlatlandViz : public QWidget {
-  Q_OBJECT public :
-      /**
-        * @brief Construct FlatlandViz and subscribe to debug topic list
-        *
-        * @param parent The parent widget
-        */
-      FlatlandViz(FlatlandWindow* parent = 0);
+ Q_OBJECT public :
+     /**
+      * @brief Construct FlatlandViz and subscribe to debug topic list
+      *
+      * @param parent The parent widget
+      */
+     FlatlandViz(FlatlandWindow* parent = 0);
 
   /**
    * @brief Recieve a new DebugTopicList msg and add any new displays required
@@ -117,6 +119,17 @@ class FlatlandViz : public QWidget {
   rviz::Display* interactive_markers_;
   std::map<std::string, rviz::Display*> debug_displays_;
   ros::Subscriber debug_topic_subscriber_;
+
+  // Diagnostic overlay displays, toggled by the DiagnosticLayerPanel.
+  rviz::Display* occupancy_display_;     ///< rviz/Map of the static map layer
+  rviz::Display* laser_display_;         ///< rviz/LaserScan
+  rviz::Display* planned_path_display_;  ///< rviz/Path (planned trajectory)
+  rviz::Display* actual_path_display_;   ///< rviz/Path (actual trajectory)
+  rviz::Display* friction_display_;      ///< rviz/MarkerArray friction regions
+  DiagnosticLayerPanel* diagnostic_panel_;  ///< dockable overlay toggle panel
+  /// Desired visibility for the auto-discovered dynamic-obstacle debug
+  /// displays; applied to existing and future displays so the toggle persists.
+  bool show_dynamic_obstacles_;
   rviz::PropertyTreeWidget* tree_widget_;
   FlatlandWindow* parent_;
 
@@ -153,6 +166,19 @@ class FlatlandViz : public QWidget {
   void initMenus();
   void openNewToolDialog();
   void setFullScreen(bool full_screen);
+
+  /**
+   * @brief Create the diagnostic-overlay displays and the dock panel that
+   * toggles them. Called once from the constructor after the manager is up.
+   */
+  void initDiagnosticOverlays();
+
+  /**
+   * @brief Show/hide every auto-discovered dynamic-obstacle debug display, and
+   * remember the choice for displays created later by RecieveDebugTopics.
+   * @param visible Desired visibility
+   */
+  void setDynamicObstaclesVisible(bool visible);
 };
 
 #endif  // FLATLAND_VIZ_FLATLAND_VIZ_H

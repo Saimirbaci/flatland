@@ -1,0 +1,7 @@
+properties: {}
+layers:
+  - name: "static"
+models:
+  - name: robot
+    pose: [1, 2, 0]
+    model: trajectory_robot.model.yaml

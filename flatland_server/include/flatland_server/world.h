@@ -55,8 +55,9 @@
 #include <flatland_server/plugin_manager.h>
 #include <flatland_server/surface_friction_field.h>
 #include <flatland_server/timekeeper.h>
+#include <ros/ros.h>
+
 #include <map>
-#include <string>
 #include <string>
 #include <vector>
 
@@ -69,13 +70,13 @@ namespace flatland_server {
  */
 class World : public b2ContactListener {
  public:
-  boost::filesystem::path world_yaml_dir_;  ///<directory containing world file
-  b2World *physics_world_;                  ///< Box2D physics world
+  boost::filesystem::path world_yaml_dir_;  ///< directory containing world file
+  b2World* physics_world_;                  ///< Box2D physics world
   b2Vec2 gravity_;  ///< Box2D world gravity, always (0, 0)
-  std::map<std::vector<std::string>, Layer *>
+  std::map<std::vector<std::string>, Layer*>
       layers_name_map_;           ///< map of all layers and thier name
-  std::vector<Layer *> layers_;   ///< list of layers
-  std::vector<Model *> models_;   ///< list of models
+  std::vector<Layer*> layers_;    ///< list of layers
+  std::vector<Model*> models_;    ///< list of models
   CollisionFilterRegistry cfr_;   ///< collision registry for layers and models
   PluginManager plugin_manager_;  ///< for loading and updating plugins
   bool service_paused_;  ///< indicates if simulation is paused by a service
@@ -84,20 +85,29 @@ class World : public b2ContactListener {
       int_marker_manager_;  ///< for dynamically moving models from Rviz
   int physics_position_iterations_;  ///< Box2D solver param
   int physics_velocity_iterations_;  ///< Box2D solver param
-  int physics_substeps_;  ///< number of fixed sub-steps Box2D integrates per
-                          /// outer step (>=1). Splits the visible step_size
-                          /// into finer dt for contact stability at AGV
-                          /// mass/speed without changing the published clock
-                          /// or plugin step cadence.
+  int physics_substeps_;     ///< number of fixed sub-steps Box2D integrates per
+                             /// outer step (>=1). Splits the visible step_size
+                             /// into finer dt for contact stability at AGV
+                             /// mass/speed without changing the published clock
+                             /// or plugin step cadence.
   bool continuous_physics_;  ///< toggles Box2D continuous collision detection
                              ///(CCD). Keeps fast/thin bodies from tunnelling
                              /// through walls; disable to trade realism for
                              /// throughput.
-  SurfaceFrictionField surface_friction_;  ///< per-region surface friction
-                                           /// multiplier field (wet patches,
-                                           /// spills, ramps). Disabled (factor
-                                           /// 1.0 everywhere) unless the world
-                                           /// YAML has a surface_friction block.
+  SurfaceFrictionField
+      surface_friction_;  ///< per-region surface friction
+                          /// multiplier field (wet patches,
+                          /// spills, ramps). Disabled (factor
+                          /// 1.0 everywhere) unless the world
+                          /// YAML has a surface_friction block.
+
+  ros::NodeHandle
+      nh_;  ///< node handle owning the diagnostic-overlay publishers
+  std::vector<ros::Publisher>
+      layer_occupancy_pubs_;  ///< latched per-layer OccupancyGrid publishers
+                              /// (kept alive so late subscribers still latch)
+  ros::Publisher
+      friction_regions_pub_;  ///< latched friction-region MarkerArray
 
   /**
    * @brief Constructor for the world class. All data required for
@@ -114,53 +124,53 @@ class World : public b2ContactListener {
    * @brief trigger world update include all physics and plugins
    * @param[in] timekeeper The time keeping object
    */
-  void Update(Timekeeper &timekeeper);
+  void Update(Timekeeper& timekeeper);
 
   /**
    * @brief Box2D inherited begin contact
    * @param[in] contact Box2D contact information
    */
-  void BeginContact(b2Contact *contact) override;
+  void BeginContact(b2Contact* contact) override;
 
   /**
    * @brief Box2D inherited end contact
    * @param[in] contact Box2D contact information
    */
-  void EndContact(b2Contact *contact) override;
+  void EndContact(b2Contact* contact) override;
 
   /**
    * @brief Box2D inherited presolve
    * @param[in] contact Box2D contact information
    * @param[in] oldManifold The manifold from the previous timestep
    */
-  void PreSolve(b2Contact *contact, const b2Manifold *oldManifold);
+  void PreSolve(b2Contact* contact, const b2Manifold* oldManifold);
 
   /**
    * @brief Box2D inherited pre solve
    * @param[in] contact Box2D contact information
    * @param[in] impulse The calculated impulse from the collision resolute
    */
-  void PostSolve(b2Contact *contact, const b2ContactImpulse *impulse);
+  void PostSolve(b2Contact* contact, const b2ContactImpulse* impulse);
 
   /*
    * @brief Load world plugins
    * @param[in] world_plugin_reader, readin the info about the plugin
    * @param[in] world, the world where the plugin will be applied to
    * @param[in] world config, the yaml reader of world.yaml
-  */
-  void LoadWorldPlugins(YamlReader &world_plugin_reader, World *world,
-                        YamlReader &world_config);
+   */
+  void LoadWorldPlugins(YamlReader& world_plugin_reader, World* world,
+                        YamlReader& world_config);
   /**
    * @brief load layers into the world. Throws YAMLException.
    * @param[in] layers_reader Yaml reader for node that has list of layers
    */
-  void LoadLayers(YamlReader &layers_reader);
+  void LoadLayers(YamlReader& layers_reader);
 
   /**
    * @brief load models into the world. Throws YAMLException.
    * @param[in] layers_reader Yaml reader for node that has a list of models
    */
-  void LoadModels(YamlReader &models_reader);
+  void LoadModels(YamlReader& models_reader);
 
   /**
    * @brief load models into the world. Throws YAMLException.
@@ -169,21 +179,21 @@ class World : public b2ContactListener {
    * @param[in] name Name of the model
    * @param[in] pose Initial pose of the model in x, y, yaw
    */
-  void LoadModel(const std::string &model_yaml_path, const std::string &ns,
-                 const std::string &name, const Pose &pose);
+  void LoadModel(const std::string& model_yaml_path, const std::string& ns,
+                 const std::string& name, const Pose& pose);
 
   /**
    * @brief remove model with a given name
    * @param[in] name The name of the model to remove
    */
-  void DeleteModel(const std::string &name);
+  void DeleteModel(const std::string& name);
 
   /**
    * @brief move model with a given name
    * @param[in] name The name of the model to move
    * @param[in] pose The desired new pose of the model
    */
-  void MoveModel(const std::string &name, const Pose &pose);
+  void MoveModel(const std::string& name, const Pose& pose);
 
   /**
    * @brief set the paused state of the simulation to true
@@ -212,10 +222,11 @@ class World : public b2ContactListener {
    * @param[in] yaml_path Path to the world yaml file
    * @param[in] seed run seed used to deterministically seed all RNG sources
    *            (plugins, world_random_wall, the Lua preprocessor). <0 means
-   *            nondeterministic, falling back to the world YAML properties.seed.
+   *            nondeterministic, falling back to the world YAML
+   * properties.seed.
    * @return pointer to a new world
    */
-  static World *MakeWorld(const std::string &yaml_path, int seed = -1);
+  static World* MakeWorld(const std::string& yaml_path, int seed = -1);
 
   /**
    * @brief Sample the surface friction multiplier at a world point.
@@ -228,7 +239,7 @@ class World : public b2ContactListener {
    * @param[in] point Query point in world coordinates [m]
    * @return Surface friction multiplier at the point
    */
-  double GetSurfaceFrictionFactor(const b2Vec2 &point) const {
+  double GetSurfaceFrictionFactor(const b2Vec2& point) const {
     return surface_friction_.GetFrictionFactor(point);
   }
 
@@ -238,6 +249,20 @@ class World : public b2ContactListener {
    * parameter is used to skip updating layers
    */
   void DebugVisualize(bool update_layers = true);
+
+  /**
+   * @brief Publish the static diagnostic overlays once, on latched topics.
+   *
+   * Advertises and publishes one nav_msgs/OccupancyGrid per image-based layer
+   * (`/flatland_server/layers/<name>/occupancy`) and, when a surface_friction
+   * block is configured, a visualization_msgs/MarkerArray of friction regions
+   * (`/flatland_server/debug/friction_regions`). Everything is latched and
+   * published exactly once at world-load time, so this adds no per-step cost
+   * and late subscribers (rviz, the flatland_viz Diagnostic Layers panel) still
+   * receive the data. Safe to call once after the world is built; calling it
+   * again simply re-advertises and re-publishes.
+   */
+  void PublishDiagnostics();
 };
-};      // namespace flatland_server
+};  // namespace flatland_server
 #endif  // FLATLAND_SERVER_WORLD_H

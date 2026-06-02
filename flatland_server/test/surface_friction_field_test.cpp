@@ -46,6 +46,7 @@
 
 #include <flatland_server/surface_friction_field.h>
 #include <gtest/gtest.h>
+
 #include <vector>
 
 using flatland_server::SurfaceFrictionField;
@@ -162,6 +163,48 @@ TEST(SurfaceFrictionFieldTest, honors_origin_and_resolution) {
   EXPECT_NEAR(0.9, field.GetFrictionFactor(b2Vec2(-0.25f, -0.75f)), 1e-9);
   // Halfway between the two cell centres -> mean.
   EXPECT_NEAR(0.6, field.GetFrictionFactor(b2Vec2(-0.5f, -0.75f)), 1e-9);
+}
+
+/**
+ * A disabled field produces only a DELETEALL marker, so the diagnostic overlay
+ * clears cleanly and never draws geometry for worlds without surface friction.
+ */
+TEST(SurfaceFrictionFieldTest, marker_array_disabled_is_delete_all) {
+  SurfaceFrictionField field;
+  visualization_msgs::MarkerArray array = field.ToMarkerArray("map");
+
+  ASSERT_EQ(1u, array.markers.size());
+  EXPECT_EQ(visualization_msgs::Marker::DELETEALL, array.markers[0].action);
+}
+
+/**
+ * Only the sub-nominal (slippery) cells become points in the CUBE_LIST overlay;
+ * the dry baseline cells are skipped. The two wet cells of a dry/dry/wet/wet
+ * row yield two points at their cell centres, coloured toward red.
+ */
+TEST(SurfaceFrictionFieldTest, marker_array_emits_only_slippery_cells) {
+  std::vector<double> grid = {1.0, 1.0, 0.2, 0.2};
+  SurfaceFrictionField field(grid, 4, 1, 1.0, 0.0, 0.0);
+
+  visualization_msgs::MarkerArray array = field.ToMarkerArray("map");
+
+  // DELETEALL marker followed by the CUBE_LIST.
+  ASSERT_EQ(2u, array.markers.size());
+  const visualization_msgs::Marker& cubes = array.markers[1];
+  EXPECT_EQ("map", cubes.header.frame_id);
+  EXPECT_EQ(visualization_msgs::Marker::CUBE_LIST, cubes.type);
+
+  // Two wet cells -> two points (+ matching per-point colours).
+  ASSERT_EQ(2u, cubes.points.size());
+  ASSERT_EQ(2u, cubes.colors.size());
+
+  // Cell centres at x = 2.5 and 3.5, y = 0.5 (single row).
+  EXPECT_NEAR(2.5, cubes.points[0].x, 1e-6);
+  EXPECT_NEAR(0.5, cubes.points[0].y, 1e-6);
+  EXPECT_NEAR(3.5, cubes.points[1].x, 1e-6);
+
+  // Slippery -> more red than green.
+  EXPECT_GT(cubes.colors[0].r, cubes.colors[0].g);
 }
 
 // Run all the tests that were declared with TEST()

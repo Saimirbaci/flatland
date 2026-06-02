@@ -52,8 +52,11 @@
 #include <flatland_server/world.h>
 #include <flatland_server/yaml_preprocessor.h>
 #include <flatland_server/yaml_reader.h>
+#include <nav_msgs/OccupancyGrid.h>
 #include <ros/ros.h>
+#include <visualization_msgs/MarkerArray.h>
 #include <yaml-cpp/yaml.h>
+
 #include <boost/filesystem.hpp>
 #include <cstdlib>
 #include <map>
@@ -87,7 +90,7 @@ World::~World() {
   // fixtures in a layer and it is too slow for the destroyBody method to remove
   // them since the AABB tree gets restructured everytime a fixture is removed
   // The memory will later be freed by deleting the world
-  for (auto &layer : layers_) {
+  for (auto& layer : layers_) {
     if (layer->body_ != nullptr) {
       layer->body_->physics_body_ = nullptr;
     }
@@ -107,7 +110,7 @@ World::~World() {
   ROS_INFO_NAMED("World", "World destroyed");
 }
 
-void World::Update(Timekeeper &timekeeper) {
+void World::Update(Timekeeper& timekeeper) {
   if (!IsPaused()) {
     plugin_manager_.BeforePhysicsStep(timekeeper);
     // Integrate physics in physics_substeps_ equal sub-steps. Box2D solver
@@ -130,27 +133,27 @@ void World::Update(Timekeeper &timekeeper) {
   int_marker_manager_.update();
 }
 
-void World::BeginContact(b2Contact *contact) {
+void World::BeginContact(b2Contact* contact) {
   plugin_manager_.BeginContact(contact);
 }
 
-void World::EndContact(b2Contact *contact) {
+void World::EndContact(b2Contact* contact) {
   plugin_manager_.EndContact(contact);
 }
 
-void World::PreSolve(b2Contact *contact, const b2Manifold *oldManifold) {
+void World::PreSolve(b2Contact* contact, const b2Manifold* oldManifold) {
   plugin_manager_.PreSolve(contact, oldManifold);
 }
 
-void World::PostSolve(b2Contact *contact, const b2ContactImpulse *impulse) {
+void World::PostSolve(b2Contact* contact, const b2ContactImpulse* impulse) {
   plugin_manager_.PostSolve(contact, impulse);
 }
 
 // Resolve and apply the run seed to every RNG source in the simulator. A
 // negative request means "nondeterministic": a fresh seed is drawn from
 // std::random_device and logged so the run can still be replayed. The resolved
-// seed is fed to the RngManager (plugins), the legacy C RNG (world_random_wall),
-// and the Lua preprocessor ($eval math.random).
+// seed is fed to the RngManager (plugins), the legacy C RNG
+// (world_random_wall), and the Lua preprocessor ($eval math.random).
 static void SeedSimulation(int requested) {
   uint32_t effective;
   if (requested < 0) {
@@ -169,7 +172,7 @@ static void SeedSimulation(int requested) {
   YamlPreprocessor::SetSeed(effective);
 }
 
-World *World::MakeWorld(const std::string &yaml_path, int seed) {
+World* World::MakeWorld(const std::string& yaml_path, int seed) {
   // Apply the seed as early as possible (before the world YAML is preprocessed)
   // when given on the node param, so even world-level $eval expressions are
   // reproducible. With no node-param seed we defer until properties are parsed
@@ -199,13 +202,13 @@ World *World::MakeWorld(const std::string &yaml_path, int seed) {
   }
 
   // node-param seed wins; otherwise fall back to properties.seed (and finally a
-  // nondeterministic seed). Seeded before any model/plugin loads so plugin noise
-  // and model-file $eval are reproducible.
+  // nondeterministic seed). Seeded before any model/plugin loads so plugin
+  // noise and model-file $eval are reproducible.
   if (seed < 0) {
     SeedSimulation(yaml_seed);
   }
 
-  World *w = new World();
+  World* w = new World();
 
   w->world_yaml_dir_ = boost::filesystem::path(yaml_path).parent_path();
   w->physics_velocity_iterations_ = v;
@@ -231,15 +234,15 @@ World *World::MakeWorld(const std::string &yaml_path, int seed) {
     w->LoadLayers(layers_reader);
     w->LoadModels(models_reader);
     w->LoadWorldPlugins(world_plugin_reader, w, world_reader);
-  } catch (const YAMLException &e) {
+  } catch (const YAMLException& e) {
     ROS_FATAL_NAMED("World", "Error loading from YAML");
     delete w;
     throw e;
-  } catch (const PluginException &e) {
+  } catch (const PluginException& e) {
     ROS_FATAL_NAMED("World", "Error loading plugins");
     delete w;
     throw e;
-  } catch (const Exception &e) {
+  } catch (const Exception& e) {
     ROS_FATAL_NAMED("World", "Error loading world");
     delete w;
     throw e;
@@ -247,7 +250,7 @@ World *World::MakeWorld(const std::string &yaml_path, int seed) {
   return w;
 }
 
-void World::LoadLayers(YamlReader &layers_reader) {
+void World::LoadLayers(YamlReader& layers_reader) {
   // loop through each layer and parse the data
   for (int i = 0; i < layers_reader.NodeSize(); i++) {
     YamlReader reader = layers_reader.Subnode(i, YamlReader::MAP);
@@ -275,7 +278,7 @@ void World::LoadLayers(YamlReader &layers_reader) {
         reader.SubnodeOpt("properties", YamlReader::NodeTypeCheck::MAP).Node();
     reader.EnsureAccessedAllKeys();
 
-    for (const auto &name : names) {
+    for (const auto& name : names) {
       if (cfr_.RegisterLayer(name) == cfr_.LAYER_ALREADY_EXIST) {
         throw YAMLException("Layer with name " + Q(name) + " already exists");
       }
@@ -288,10 +291,10 @@ void World::LoadLayers(YamlReader &layers_reader) {
     ROS_INFO_NAMED("World", "Loading layer \"%s\" from path=\"%s\"",
                    names[0].c_str(), map_path.string().c_str());
 
-    Layer *layer = Layer::MakeLayer(physics_world_, &cfr_, map_path.string(),
+    Layer* layer = Layer::MakeLayer(physics_world_, &cfr_, map_path.string(),
                                     names, color, properties);
     layers_name_map_.insert(
-        std::pair<std::vector<std::string>, Layer *>(names, layer));
+        std::pair<std::vector<std::string>, Layer*>(names, layer));
     layers_.push_back(layer);
 
     ROS_INFO_NAMED("World", "Layer \"%s\" loaded", layer->name_.c_str());
@@ -299,7 +302,7 @@ void World::LoadLayers(YamlReader &layers_reader) {
   }
 }
 
-void World::LoadModels(YamlReader &models_reader) {
+void World::LoadModels(YamlReader& models_reader) {
   if (!models_reader.IsNodeNull()) {
     for (int i = 0; i < models_reader.NodeSize(); i++) {
       YamlReader reader = models_reader.Subnode(i, YamlReader::MAP);
@@ -314,8 +317,8 @@ void World::LoadModels(YamlReader &models_reader) {
   }
 }
 
-void World::LoadWorldPlugins(YamlReader &world_plugin_reader, World *world,
-                             YamlReader &world_config) {
+void World::LoadWorldPlugins(YamlReader& world_plugin_reader, World* world,
+                             YamlReader& world_config) {
   if (!world_plugin_reader.IsNodeNull()) {
     for (int i = 0; i < world_plugin_reader.NodeSize(); i++) {
       YamlReader reader = world_plugin_reader.Subnode(i, YamlReader::MAP);
@@ -324,11 +327,11 @@ void World::LoadWorldPlugins(YamlReader &world_plugin_reader, World *world,
     }
   }
 }
-void World::LoadModel(const std::string &model_yaml_path, const std::string &ns,
-                      const std::string &name, const Pose &pose) {
+void World::LoadModel(const std::string& model_yaml_path, const std::string& ns,
+                      const std::string& name, const Pose& pose) {
   // ensure no duplicate model names
   if (std::count_if(models_.begin(), models_.end(),
-                    [&](Model *m) { return m->name_ == name; }) >= 1) {
+                    [&](Model* m) { return m->name_ == name; }) >= 1) {
     throw YAMLException("Model with name " + Q(name) + " already exists");
   }
 
@@ -340,7 +343,7 @@ void World::LoadModel(const std::string &model_yaml_path, const std::string &ns,
   ROS_INFO_NAMED("World", "Loading model from path=\"%s\"",
                  abs_path.string().c_str());
 
-  Model *m =
+  Model* m =
       Model::MakeModel(physics_world_, &cfr_, abs_path.string(), ns, name);
   // Back-pointer so plugins can reach world-scoped state (e.g. the surface
   // friction field) through GetModel()->GetWorld(). Set before plugins load.
@@ -352,11 +355,11 @@ void World::LoadModel(const std::string &model_yaml_path, const std::string &ns,
       YamlReader plugin_reader = m->plugins_reader_.Subnode(i, YamlReader::MAP);
       plugin_manager_.LoadModelPlugin(m, plugin_reader);
     }
-  } catch (const YAMLException &e) {
+  } catch (const YAMLException& e) {
     plugin_manager_.DeleteModelPlugin(m);
     delete m;
     throw e;
-  } catch (const PluginException &e) {
+  } catch (const PluginException& e) {
     plugin_manager_.DeleteModelPlugin(m);
     delete m;
     throw e;
@@ -375,7 +378,7 @@ void World::LoadModel(const std::string &model_yaml_path, const std::string &ns,
   m->DebugOutput();
 }
 
-void World::DeleteModel(const std::string &name) {
+void World::DeleteModel(const std::string& name) {
   bool found = false;
 
   for (unsigned int i = 0; i < models_.size(); i++) {
@@ -397,7 +400,7 @@ void World::DeleteModel(const std::string &name) {
   }
 }
 
-void World::MoveModel(const std::string &name, const Pose &pose) {
+void World::MoveModel(const std::string& name, const Pose& pose) {
   // Find desired model
   bool found = false;
 
@@ -428,13 +431,60 @@ bool World::IsPaused() {
 
 void World::DebugVisualize(bool update_layers) {
   if (update_layers) {
-    for (const auto &layer : layers_) {
+    for (const auto& layer : layers_) {
       layer->DebugVisualize();
     }
   }
 
-  for (const auto &model : models_) {
+  for (const auto& model : models_) {
     model->DebugVisualize();
+  }
+}
+
+void World::PublishDiagnostics() {
+  // Latched, one-shot publishers: rebuild them each call so the method stays
+  // safe to invoke more than once, and keep them alive in members so late
+  // subscribers (rviz / the diagnostic-layers panel) still receive the latch.
+  layer_occupancy_pubs_.clear();
+
+  bool published_canonical = false;
+  for (const auto& layer : layers_) {
+    if (layer == nullptr || !layer->HasOccupancyGrid()) {
+      continue;
+    }
+    nav_msgs::OccupancyGrid grid = layer->GetOccupancyGrid();
+    grid.header.stamp = ros::Time::now();
+    grid.info.map_load_time = grid.header.stamp;
+
+    const std::string topic =
+        "/flatland_server/layers/" + layer->name_ + "/occupancy";
+    ros::Publisher pub =
+        nh_.advertise<nav_msgs::OccupancyGrid>(topic, 1, /* latch = */ true);
+    pub.publish(grid);
+    layer_occupancy_pubs_.push_back(pub);
+
+    // Also expose the first occupancy layer on a stable, name-agnostic topic so
+    // the flatland_viz Map overlay has a sensible default to bind to without
+    // knowing layer names.
+    if (!published_canonical) {
+      ros::Publisher canonical = nh_.advertise<nav_msgs::OccupancyGrid>(
+          "/flatland_server/occupancy", 1, /* latch = */ true);
+      canonical.publish(grid);
+      layer_occupancy_pubs_.push_back(canonical);
+      published_canonical = true;
+    }
+
+    ROS_INFO_NAMED("World", "Publishing occupancy overlay for layer \"%s\"",
+                   layer->name_.c_str());
+  }
+
+  // Friction regions: only meaningful when a surface_friction field is loaded,
+  // but publish (even an empty/DELETEALL array) so the overlay clears cleanly.
+  if (surface_friction_.Enabled()) {
+    friction_regions_pub_ = nh_.advertise<visualization_msgs::MarkerArray>(
+        "/flatland_server/debug/friction_regions", 1, /* latch = */ true);
+    friction_regions_pub_.publish(surface_friction_.ToMarkerArray("map"));
+    ROS_INFO_NAMED("World", "Publishing friction-region overlay");
   }
 }
 };  // namespace flatland_server

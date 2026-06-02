@@ -52,8 +52,10 @@
 #include <flatland_server/yaml_reader.h>
 #include <ros/ros.h>
 #include <yaml-cpp/yaml.h>
+
 #include <boost/algorithm/string/join.hpp>
 #include <boost/filesystem.hpp>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -68,10 +70,10 @@
 
 namespace flatland_server {
 
-Layer::Layer(b2World *physics_world, CollisionFilterRegistry *cfr,
-             const std::vector<std::string> &names, const Color &color,
-             const Pose &origin, const cv::Mat &bitmap, double occupied_thresh,
-             double resolution, const YAML::Node &properties)
+Layer::Layer(b2World* physics_world, CollisionFilterRegistry* cfr,
+             const std::vector<std::string>& names, const Color& color,
+             const Pose& origin, const cv::Mat& bitmap, double occupied_thresh,
+             double resolution, const YAML::Node& properties)
     : Entity(physics_world, names[0]),
       names_(names),
       cfr_(cfr),
@@ -80,12 +82,13 @@ Layer::Layer(b2World *physics_world, CollisionFilterRegistry *cfr,
                    properties);
 
   LoadFromBitmap(bitmap, occupied_thresh, resolution);
+  BuildOccupancyGrid(bitmap, occupied_thresh, resolution, origin);
 }
 
-Layer::Layer(b2World *physics_world, CollisionFilterRegistry *cfr,
-             const std::vector<std::string> &names, const Color &color,
-             const Pose &origin, const std::vector<LineSegment> &line_segments,
-             double scale, const YAML::Node &properties)
+Layer::Layer(b2World* physics_world, CollisionFilterRegistry* cfr,
+             const std::vector<std::string>& names, const Color& color,
+             const Pose& origin, const std::vector<LineSegment>& line_segments,
+             double scale, const YAML::Node& properties)
     : Entity(physics_world, names[0]),
       names_(names),
       cfr_(cfr),
@@ -95,7 +98,7 @@ Layer::Layer(b2World *physics_world, CollisionFilterRegistry *cfr,
 
   uint16_t category_bits = cfr_->GetCategoryBits(names_);
 
-  for (const auto &line_segment : line_segments) {
+  for (const auto& line_segment : line_segments) {
     b2EdgeShape edge;
     edge.Set(line_segment.start.Box2D(), line_segment.end.Box2D());
     edge.m_vertex1 *= scale;
@@ -110,9 +113,9 @@ Layer::Layer(b2World *physics_world, CollisionFilterRegistry *cfr,
   }
 }
 
-Layer::Layer(b2World *physics_world, CollisionFilterRegistry *cfr,
-             const std::vector<std::string> &names, const Color &color,
-             const YAML::Node &properties)
+Layer::Layer(b2World* physics_world, CollisionFilterRegistry* cfr,
+             const std::vector<std::string>& names, const Color& color,
+             const YAML::Node& properties)
     : Entity(physics_world, names[0]),
       names_(names),
       cfr_(cfr),
@@ -120,15 +123,15 @@ Layer::Layer(b2World *physics_world, CollisionFilterRegistry *cfr,
 
 Layer::~Layer() { delete body_; }
 
-const std::vector<std::string> &Layer::GetNames() const { return names_; }
+const std::vector<std::string>& Layer::GetNames() const { return names_; }
 
-const CollisionFilterRegistry *Layer::GetCfr() const { return cfr_; }
-Body *Layer::GetBody() { return body_; }
+const CollisionFilterRegistry* Layer::GetCfr() const { return cfr_; }
+Body* Layer::GetBody() { return body_; }
 
-Layer *Layer::MakeLayer(b2World *physics_world, CollisionFilterRegistry *cfr,
-                        const std::string &map_path,
-                        const std::vector<std::string> &names,
-                        const Color &color, const YAML::Node &properties) {
+Layer* Layer::MakeLayer(b2World* physics_world, CollisionFilterRegistry* cfr,
+                        const std::string& map_path,
+                        const std::vector<std::string>& names,
+                        const Color& color, const YAML::Node& properties) {
   if (map_path.length() > 0) {  // If there is a map in this layer
     YamlReader reader(map_path);
     reader.SetErrorInfo("layer " + Q(names[0]));
@@ -185,8 +188,8 @@ Layer *Layer::MakeLayer(b2World *physics_world, CollisionFilterRegistry *cfr,
   }
 }
 
-void Layer::ReadLineSegmentsFile(const std::string &file_path,
-                                 std::vector<LineSegment> &line_segments) {
+void Layer::ReadLineSegmentsFile(const std::string& file_path,
+                                 std::vector<LineSegment>& line_segments) {
   std::ifstream in_file(file_path);
   std::string line;
   int line_count = 0;
@@ -217,7 +220,7 @@ void Layer::ReadLineSegmentsFile(const std::string &file_path,
   }
 }
 
-void Layer::LoadFromBitmap(const cv::Mat &bitmap, double occupied_thresh,
+void Layer::LoadFromBitmap(const cv::Mat& bitmap, double occupied_thresh,
                            double resolution) {
   uint16_t category_bits = cfr_->GetCategoryBits(names_);
 
@@ -230,7 +233,7 @@ void Layer::LoadFromBitmap(const cv::Mat &bitmap, double occupied_thresh,
 
     std::vector<b2Vec2> poly_b2;
     poly_b2.reserve(poly.size());
-    for(auto& p : poly) {
+    for (auto& p : poly) {
       poly_b2.emplace_back(res * p.x, res * (rows - p.y));
     }
 
@@ -249,40 +252,82 @@ void Layer::LoadFromBitmap(const cv::Mat &bitmap, double occupied_thresh,
 
   // thresholds the map, values between the occupied threshold and 1.0 are
   // considered to be occupied
-  cv::inRange(bitmap, occupied_thresh, 1.0, obstacle_map); 
+  cv::inRange(bitmap, occupied_thresh, 1.0, obstacle_map);
 
-  // simplify_map rosparam: 0=None, 1=moderate, 2=maximum simplification of map polygon outlines
+  // simplify_map rosparam: 0=None, 1=moderate, 2=maximum simplification of map
+  // polygon outlines
   int simplify = 0;
   ros::param::param<int>("simplify_map", simplify, 0);
-  
+
   std::vector<std::vector<cv::Point>> vectors_outline;
   cv::Mat obstacle_map_open;
   if (simplify >= 2) {
     int open_kernel_size = 3;  // 0.15m at 5cm pixel resolution
-    cv::Mat kernel = cv::getStructuringElement( cv::MORPH_ELLIPSE, {open_kernel_size*2+1, open_kernel_size*2+1});
-    cv::morphologyEx(obstacle_map, obstacle_map_open, cv::MORPH_OPEN, kernel); 
+    cv::Mat kernel = cv::getStructuringElement(
+        cv::MORPH_ELLIPSE,
+        {open_kernel_size * 2 + 1, open_kernel_size * 2 + 1});
+    cv::morphologyEx(obstacle_map, obstacle_map_open, cv::MORPH_OPEN, kernel);
   } else {
     obstacle_map_open = obstacle_map.clone();
   }
 
-  cv::findContours(obstacle_map_open, vectors_outline, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
+  cv::findContours(obstacle_map_open, vectors_outline, cv::RETR_LIST,
+                   cv::CHAIN_APPROX_SIMPLE);
   for (auto& polygon : vectors_outline) {
-    std::vector<cv::Point2f> polygon2f;  // create a double rep. for RDP accuracy
-    std::transform(polygon.begin(), polygon.end(), std::back_inserter(polygon2f),
-               [](const cv::Point& p) { return (cv::Point2f)p; });
+    std::vector<cv::Point2f>
+        polygon2f;  // create a double rep. for RDP accuracy
+    std::transform(polygon.begin(), polygon.end(),
+                   std::back_inserter(polygon2f),
+                   [](const cv::Point& p) { return (cv::Point2f)p; });
     std::vector<cv::Point2f>& poly_to_use = polygon2f;
 
-    
     if (simplify >= 1) {
       std::vector<cv::Point2f> polygon_rdp;
       cv::approxPolyDP(polygon2f, polygon_rdp, 1.0, true);  // RDP reduction
-      if (polygon_rdp.size()>4) poly_to_use = polygon_rdp;
+      if (polygon_rdp.size() > 4) poly_to_use = polygon_rdp;
     }
 
     add_poly(poly_to_use);
   }
 
   ROS_INFO_NAMED("Layer", "added %d line segments", edges_added);
+}
+
+void Layer::BuildOccupancyGrid(const cv::Mat& bitmap, double occupied_thresh,
+                               double resolution, const Pose& origin) {
+  const int rows = bitmap.rows;
+  const int cols = bitmap.cols;
+  if (rows < 1 || cols < 1) {
+    return;
+  }
+
+  occupancy_grid_.header.frame_id = "map";
+  occupancy_grid_.info.resolution = static_cast<float>(resolution);
+  occupancy_grid_.info.width = static_cast<uint32_t>(cols);
+  occupancy_grid_.info.height = static_cast<uint32_t>(rows);
+  occupancy_grid_.info.origin.position.x = origin.x;
+  occupancy_grid_.info.origin.position.y = origin.y;
+  occupancy_grid_.info.origin.position.z = 0.0;
+  // Only yaw is physical in 2D; build the quaternion directly to avoid a tf2
+  // dependency just for this.
+  occupancy_grid_.info.origin.orientation.z = std::sin(origin.theta / 2.0);
+  occupancy_grid_.info.origin.orientation.w = std::cos(origin.theta / 2.0);
+
+  // OccupancyGrid data is row-major from the lower-left corner with x along a
+  // row and y up columns, whereas the OpenCV bitmap has row 0 at the top. Flip
+  // vertically so the grid lines up with the Box2D edges, which place world y =
+  // resolution * (rows - image_row) (see LoadFromBitmap / add_poly).
+  occupancy_grid_.data.resize(static_cast<size_t>(rows) * cols);
+  for (int grid_row = 0; grid_row < rows; grid_row++) {
+    const int image_row = rows - 1 - grid_row;
+    for (int col = 0; col < cols; col++) {
+      const float value = bitmap.at<float>(image_row, col);
+      occupancy_grid_.data[static_cast<size_t>(grid_row) * cols + col] =
+          (value >= occupied_thresh) ? 100 : 0;
+    }
+  }
+
+  has_occupancy_grid_ = true;
 }
 
 void Layer::DebugVisualize() const {

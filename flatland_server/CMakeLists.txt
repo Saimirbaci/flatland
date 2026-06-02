@@ -18,6 +18,7 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_geometry_msgs
   geometry_msgs
   visualization_msgs
+  nav_msgs
   interactive_markers
   flatland_msgs
 )
@@ -62,7 +63,7 @@ endif()
 catkin_package(
   INCLUDE_DIRS include thirdparty
   LIBRARIES flatland_lib flatland_Box2D
-  CATKIN_DEPENDS pluginlib roscpp std_msgs tf2 visualization_msgs tf2_geometry_msgs geometry_msgs
+  CATKIN_DEPENDS pluginlib roscpp std_msgs tf2 visualization_msgs nav_msgs tf2_geometry_msgs geometry_msgs
   DEPENDS OpenCV YAML_CPP
 )
 
@@ -286,6 +287,12 @@ if(CATKIN_ENABLE_TESTING)
     test/solver_stability_test.test
     test/solver_stability_test.cpp)
   target_link_libraries(solver_stability_test
+    flatland_lib)
+
+  add_rostest_gtest(occupancy_publisher_test
+    test/occupancy_publisher_test.test
+    test/occupancy_publisher_test.cpp)
+  target_link_libraries(occupancy_publisher_test
     flatland_lib)
 
 

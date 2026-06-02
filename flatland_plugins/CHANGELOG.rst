@@ -4,6 +4,14 @@ Changelog for package flatland_plugins
 
 Forthcoming
 -----------
+* New ``TrajectoryRecorder`` model plugin for the diagnostic overlays. It
+  accumulates a body's actual pose each step into a length-capped
+  ``nav_msgs/Path`` (``trajectory/actual``) read straight from the Box2D
+  transform, and optionally re-stamps an externally supplied planned path into
+  the world frame and republishes it (``trajectory/planned``) for
+  planned-vs-actual comparison in rviz. Sampling is rate-limited via the shared
+  ``UpdateTimer`` and the actual path is bounded to ``max_length`` poses so long
+  runs stay memory-safe.
 * Actuator / motor dynamics for the drive plugins. ``diff_drive`` and
   ``tricycle_drive`` gain an opt-in, per-axis ``ActuatorDynamics`` layer
   (``linear_actuator`` / ``angular_actuator`` for diff drive, ``drive_actuator``

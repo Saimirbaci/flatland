@@ -50,6 +50,8 @@
 
 #include <Box2D/Box2D.h>
 #include <flatland_server/yaml_reader.h>
+#include <visualization_msgs/MarkerArray.h>
+
 #include <boost/filesystem.hpp>
 #include <string>
 #include <vector>
@@ -100,10 +102,9 @@ class SurfaceFrictionField {
    * @param[in] origin_y World y of the lower-left corner of the grid [m]
    * @param[in] min_factor Lower clamp applied to every sampled value
    */
-  SurfaceFrictionField(const std::vector<double> &factors, int width,
+  SurfaceFrictionField(const std::vector<double>& factors, int width,
                        int height, double resolution, double origin_x,
-                       double origin_y,
-                       double min_factor = kDefaultMinFactor);
+                       double origin_y, double min_factor = kDefaultMinFactor);
 
   /**
    * @brief Whether the field carries any region data. A disabled field always
@@ -117,7 +118,7 @@ class SurfaceFrictionField {
    * @return Continuous, bounded friction multiplier; 1.0 if the field is
    *         disabled or the point lies outside the raster extent.
    */
-  double GetFrictionFactor(const b2Vec2 &world_point) const;
+  double GetFrictionFactor(const b2Vec2& world_point) const;
 
   /**
    * @brief Build a field from the optional world-YAML `surface_friction` block.
@@ -138,10 +139,35 @@ class SurfaceFrictionField {
    * @return A populated or disabled SurfaceFrictionField
    */
   static SurfaceFrictionField FromConfig(
-      YamlReader &reader, const boost::filesystem::path &world_dir);
+      YamlReader& reader, const boost::filesystem::path& world_dir);
+
+  /**
+   * @brief Build a MarkerArray visualizing the low-traction regions.
+   *
+   * Emits a single CUBE_LIST marker whose points are the centres of the cells
+   * whose friction multiplier is below the field maximum (the nominal/dry
+   * baseline), each colour-mapped from green (full grip) to red (most
+   * slippery). A leading DELETEALL marker clears any previously published
+   * regions. A disabled field yields an empty (DELETEALL-only) array, so the
+   * overlay simply disappears for worlds without a surface_friction block.
+   *
+   * Cells are emitted at a stride that bounds the point count to @p max_points;
+   * if the field is larger than that the stride is logged so the downsampling
+   * is never silent. This is a one-shot, latched-publish helper — it does no
+   * physics work and is never called from the step loop.
+   *
+   * @param[in] frame_id tf frame the markers are stamped in (e.g. "map")
+   * @param[in] ns Marker namespace
+   * @param[in] max_points Upper bound on emitted cell points (downsampled
+   * above)
+   * @return MarkerArray ready to publish
+   */
+  visualization_msgs::MarkerArray ToMarkerArray(
+      const std::string& frame_id, const std::string& ns = "friction_regions",
+      size_t max_points = 200000) const;
 
  private:
-  bool enabled_ = false;     ///< false -> GetFrictionFactor always returns 1.0
+  bool enabled_ = false;      ///< false -> GetFrictionFactor always returns 1.0
   std::vector<double> grid_;  ///< row-major width_*height_ friction multipliers
   int width_ = 0;             ///< grid columns
   int height_ = 0;            ///< grid rows
