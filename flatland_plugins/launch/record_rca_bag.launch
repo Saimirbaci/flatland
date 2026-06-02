@@ -1,0 +1,23 @@
+<!--
+  RCA bag recording for the fault-injection benchmark.
+
+  Records the in-band signals the RCA is allowed to reason over and EXPLICITLY
+  excludes the sealed ground-truth namespace. `record -a` grabs every topic;
+  `--exclude /_ground_truth.*` drops the reserved label topic so the ground
+  truth NEVER enters the RCA bag. If the RCA could see the label the benchmark
+  would be void (see doc/fault_injection.md).
+
+  The sealed sidecar manifest (FaultInjector `ground_truth_path`) lives outside
+  any recorded bag and is likewise off-limits to the RCA. Both label surfaces
+  are consumed only by scripts/fault_eval/score_rca.py.
+
+  Exclude-by-prefix (not an allowlist) is deliberate: new in-band sensor topics
+  are recorded automatically and only the reserved namespace is ever dropped.
+-->
+<launch>
+  <arg name="bag_path" default="$(env HOME)/.ros/rca.bag"/>
+  <arg name="exclude_regex" default="/_ground_truth.*"/>
+
+  <node pkg="rosbag" type="record" name="rca_recorder" output="screen"
+        args="-a -O $(arg bag_path) --exclude $(arg exclude_regex)"/>
+</launch>

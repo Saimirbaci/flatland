@@ -103,6 +103,8 @@ class TricycleDrive : public flatland_server::ModelPlugin {
   default_random_engine rng_;
   array<normal_distribution<double>, 6> noise_gen_;
 
+  std::string fault_key_;  ///< registry component key (model/plugin)
+
   /**
    * @name                OnInitialize
    * @brief               initialize the bicycle plugin

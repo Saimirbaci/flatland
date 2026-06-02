@@ -72,6 +72,12 @@ class Imu : public flatland_server::ModelPlugin {
 
   std::default_random_engine rng_;
   std::array<std::normal_distribution<double>, 9> noise_gen_;
+
+  std::string fault_key_;      ///< registry component key (model/plugin)
+  double imu_drift_ = 0.0;     ///< accumulated sensor_drift offset
+  bool stuck_valid_ = false;   ///< whether last_imu_ holds a value to freeze to
+  sensor_msgs::Imu last_imu_;  ///< last published message, for the stuck fault
+
   geometry_msgs::TransformStamped imu_tf_;   ///< tf from body to IMU frame
   tf::TransformBroadcaster tf_broadcaster_;  ///< broadcast IMU frame
   std::string imu_frame_id_;

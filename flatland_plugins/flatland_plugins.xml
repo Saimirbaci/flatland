@@ -35,4 +35,7 @@
   <class type="flatland_plugins::TrajectoryRecorder" base_class_type="flatland_server::ModelPlugin">
     <description>Record actual model pose and republish a planned path for diagnostic overlays</description>
   </class>
+  <class type="flatland_plugins::FaultInjector" base_class_type="flatland_server::WorldPlugin">
+    <description>YAML-driven time/condition-triggered fault injection with sealed out-of-band ground truth</description>
+  </class>
 </library>

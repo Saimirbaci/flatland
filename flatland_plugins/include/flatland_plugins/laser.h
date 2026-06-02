@@ -96,6 +96,10 @@ class Laser : public ModelPlugin {
   std::default_random_engine rng_;             ///< random generator
   std::normal_distribution<float> noise_gen_;  ///< gaussian noise generator
 
+  std::string fault_key_;           ///< registry component key (model/plugin)
+  std::vector<float> last_ranges_;  ///< last published ranges, for stuck fault
+  bool last_scan_valid_ = false;    ///< whether last_ranges_ holds a scan
+
   Eigen::Matrix3f m_body_to_laser_;        ///< tf from body to laser
   Eigen::Matrix3f m_world_to_body_;        ///< tf  from world to body
   Eigen::Matrix3f m_world_to_laser_;       ///< tf from world to laser
@@ -136,6 +140,16 @@ class Laser : public ModelPlugin {
    * @brief Method that contains all of the laser range calculations
    */
   void ComputeLaserRanges();
+
+  /**
+   * @brief Apply any active fault effects to the freshly computed scan.
+   * @details Perturbs laser_scan_.ranges in place (sector occlusion, noise
+   * inflation, stuck/frozen) on the main thread. Returns true if the scan
+   * should be dropped (dropout fault). No active effect -> no change, returns
+   * false.
+   * @return true if this scan should not be published
+   */
+  bool ApplyLaserFaults();
 
   /**
    * @brief helper function to extract the paramters from the YAML Node

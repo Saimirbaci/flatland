@@ -45,8 +45,10 @@
  */
 
 #include <Box2D/Box2D.h>
+#include <algorithm>
 #include <cmath>
 #include <flatland_plugins/diff_drive.h>
+#include <flatland_plugins/fault_injection_registry.h>
 #include <flatland_server/debug_visualization.h>
 #include <flatland_server/model_plugin.h>
 #include <flatland_server/random.h>
@@ -203,6 +205,10 @@ void DiffDrive::OnInitialize(const YAML::Node& config) {
   // reproducible for a given run seed (see flatland_server/random.h)
   rng_ = flatland_server::RngManager::Get().DeriveEngine(GetModel()->GetName() +
                                                          "/" + GetName());
+
+  // Stable key the FaultInjectionRegistry uses to address this drivetrain.
+  fault_key_ = ComponentKey(GetModel()->GetName(), GetName());
+
   for (unsigned int i = 0; i < 3; i++) {
     // variance is standard deviation squared
     noise_gen_[i] =
@@ -261,6 +267,35 @@ void DiffDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
       angular_velocity_,
       angular_dynamics_.Limit(angular_velocity_, angular_cmd, dt),
       angular_actuator_.AccelerationCap(b2body->GetInertia()), dt);
+
+  // Drivetrain fault perturbations: applied to the (already limited) commanded
+  // velocities BEFORE they reach Box2D, so the resulting motion / odom / tf
+  // reflect the fault causally rather than as a cosmetic number edit. No active
+  // effect -> velocities are unchanged.
+  {
+    auto& reg = FaultInjectionRegistry::Get();
+    double loss = 0.0;
+    FaultEffect tl = reg.GetEffect(fault_key_, FaultKind::kTorqueLoss);
+    if (tl.active) loss = std::max(loss, tl.severity * tl.Param("loss", 1.0));
+    FaultEffect ws = reg.GetEffect(fault_key_, FaultKind::kWheelSlip);
+    if (ws.active) loss = std::max(loss, ws.severity * ws.Param("loss", 1.0));
+    FaultEffect sw = reg.GetEffect(fault_key_, FaultKind::kStuckWheel);
+    if (sw.active) loss = std::max(loss, sw.severity);
+    double factor = 1.0 - DynamicsLimits::Saturate(loss, 0.0, 1.0);
+    linear_velocity_ *= factor;
+    angular_velocity_ *= factor;
+
+    FaultEffect asym = reg.GetEffect(fault_key_, FaultKind::kAsymmetricDrive);
+    if (asym.active) {
+      angular_velocity_ += asym.severity * asym.Param("yaw_bias");
+    }
+
+    FaultEffect db = reg.GetEffect(fault_key_, FaultKind::kDeadband);
+    if (db.active) {
+      double thr = db.severity * db.Param("deadband");
+      if (std::fabs(linear_velocity_) < thr) linear_velocity_ = 0.0;
+    }
+  }
 
   if (use_friction_drive_) {
     // Force-based traction: let the Box2D solver integrate the body under the

@@ -45,7 +45,9 @@
  */
 
 #include <Box2D/Box2D.h>
+#include <algorithm>
 #include <cmath>
+#include <flatland_plugins/fault_injection_registry.h>
 #include <flatland_plugins/tricycle_drive.h>
 #include <flatland_server/debug_visualization.h>
 #include <flatland_server/model_plugin.h>
@@ -217,6 +219,10 @@ void TricycleDrive::OnInitialize(const YAML::Node& config) {
   // reproducible for a given run seed (see flatland_server/random.h)
   rng_ = flatland_server::RngManager::Get().DeriveEngine(GetModel()->GetName() +
                                                          "/" + GetName());
+
+  // Stable key the FaultInjectionRegistry uses to address this drivetrain.
+  fault_key_ = ComponentKey(GetModel()->GetName(), GetName());
+
   for (unsigned int i = 0; i < 3; i++) {
     // variance is standard deviation squared
     noise_gen_[i] = normal_distribution<double>(0.0, sqrt(odom_pose_noise[i]));
@@ -489,6 +495,30 @@ void TricycleDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
   v_f_ = linear_dynamics_.Limit(v_f_, drive_cmd, dt);
   v_f_ = CapAcceleration(
       v_f_prev, v_f_, drive_actuator_.AccelerationCap(b2body->GetMass()), dt);
+
+  // Drivetrain fault perturbations: applied to the (already limited) drive
+  // speed and steering angle BEFORE they reach Box2D, so the motion / odom / tf
+  // reflect the fault causally. No active effect -> unchanged.
+  {
+    auto& reg = FaultInjectionRegistry::Get();
+    double loss = 0.0;
+    FaultEffect tl = reg.GetEffect(fault_key_, FaultKind::kTorqueLoss);
+    if (tl.active) loss = std::max(loss, tl.severity * tl.Param("loss", 1.0));
+    FaultEffect ws = reg.GetEffect(fault_key_, FaultKind::kWheelSlip);
+    if (ws.active) loss = std::max(loss, ws.severity * ws.Param("loss", 1.0));
+    FaultEffect sw = reg.GetEffect(fault_key_, FaultKind::kStuckWheel);
+    if (sw.active) loss = std::max(loss, sw.severity);
+    v_f_ *= (1.0 - DynamicsLimits::Saturate(loss, 0.0, 1.0));
+
+    FaultEffect asym = reg.GetEffect(fault_key_, FaultKind::kAsymmetricDrive);
+    if (asym.active) {
+      theta_f_ += asym.severity * asym.Param("yaw_bias");
+      if (max_steer_angle_ != 0.0) {
+        theta_f_ = DynamicsLimits::Saturate(theta_f_, -max_steer_angle_,
+                                            max_steer_angle_);
+      }
+    }
+  }
 
   if (use_friction_drive_) {
     // Force-based traction: drive the front wheel and let the rear rolling

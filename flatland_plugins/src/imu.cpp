@@ -45,6 +45,7 @@
  */
 
 #include <Box2D/Box2D.h>
+#include <flatland_plugins/fault_injection_registry.h>
 #include <flatland_plugins/imu.h>
 #include <flatland_server/debug_visualization.h>
 #include <flatland_server/model_plugin.h>
@@ -53,6 +54,8 @@
 #include <pluginlib/class_list_macros.h>
 #include <ros/ros.h>
 #include <tf/tf.h>
+#include <cmath>
+#include <random>
 
 namespace flatland_plugins {
 
@@ -137,6 +140,10 @@ void Imu::OnInitialize(const YAML::Node& config) {
   // reproducible for a given run seed (see flatland_server/random.h)
   rng_ = flatland_server::RngManager::Get().DeriveEngine(GetModel()->GetName() +
                                                          "/" + GetName());
+
+  // Stable key the FaultInjectionRegistry uses to address this sensor.
+  fault_key_ = ComponentKey(GetModel()->GetName(), GetName());
+
   for (int i = 0; i < 3; i++) {
     // variance is standard deviation squared
     noise_gen_[i] =
@@ -214,20 +221,96 @@ void Imu::AfterPhysicsStep(const Timekeeper& timekeeper) {
     // add the noise to odom messages
     imu_msg_.header.stamp = ros::Time::now();
 
-    imu_msg_.orientation =
-        tf::createQuaternionMsgFromYaw(angle + noise_gen_[2](rng_));
+    // Baseline noisy readings (draw order preserved so a fault-free run is
+    // byte-for-byte identical to before).
+    double yaw = angle + noise_gen_[2](rng_);
+    double wz = ground_truth_msg_.angular_velocity.z + noise_gen_[5](rng_);
+    double ax = ground_truth_msg_.linear_acceleration.x + noise_gen_[6](rng_);
+    double ay = ground_truth_msg_.linear_acceleration.y + noise_gen_[7](rng_);
 
+    // Fault perturbations: applied to the NORMAL in-band reading only, scaled
+    // by severity. No active effect -> no change. The label is never set here.
+    auto &reg = FaultInjectionRegistry::Get();
+    double dt = timekeeper.GetStepSize();
+
+    FaultEffect bias = reg.GetEffect(fault_key_, FaultKind::kSensorBias);
+    if (bias.active) {
+      double b = bias.severity * bias.Param("bias");
+      yaw += b;
+      ax += b;
+      ay += b;
+      wz += b;
+    }
+
+    FaultEffect drift = reg.GetEffect(fault_key_, FaultKind::kSensorDrift);
+    if (drift.active) {
+      imu_drift_ += drift.severity * drift.Param("bias") * dt;
+    }
+    yaw += imu_drift_;
+
+    FaultEffect scale = reg.GetEffect(fault_key_, FaultKind::kSensorScale);
+    if (scale.active) {
+      double s = 1.0 + scale.severity * scale.Param("scale");
+      ax *= s;
+      ay *= s;
+      wz *= s;
+    }
+
+    FaultEffect ni = reg.GetEffect(fault_key_, FaultKind::kNoiseInflation);
+    if (ni.active) {
+      std::normal_distribution<double> n(0.0, ni.severity * ni.Param("noise"));
+      yaw += n(rng_);
+      ax += n(rng_);
+      ay += n(rng_);
+      wz += n(rng_);
+    }
+
+    FaultEffect qz = reg.GetEffect(fault_key_, FaultKind::kQuantization);
+    if (qz.active) {
+      double step = qz.Param("step");
+      if (step > 0.0) {
+        yaw = std::round(yaw / step) * step;
+        ax = std::round(ax / step) * step;
+        ay = std::round(ay / step) * step;
+        wz = std::round(wz / step) * step;
+      }
+    }
+
+    imu_msg_.orientation = tf::createQuaternionMsgFromYaw(yaw);
     imu_msg_.angular_velocity = ground_truth_msg_.angular_velocity;
-    imu_msg_.angular_velocity.z += noise_gen_[5](rng_);
-
+    imu_msg_.angular_velocity.z = wz;
     imu_msg_.linear_acceleration = ground_truth_msg_.linear_acceleration;
-    imu_msg_.linear_acceleration.x += noise_gen_[6](rng_);
-    imu_msg_.linear_acceleration.y += noise_gen_[7](rng_);
+    imu_msg_.linear_acceleration.x = ax;
+    imu_msg_.linear_acceleration.y = ay;
+
+    // Stuck/frozen: republish the previous reading (data frozen, stamp now).
+    FaultEffect stuck = reg.GetEffect(fault_key_, FaultKind::kStuck);
+    if (stuck.active && stuck_valid_) {
+      imu_msg_.orientation = last_imu_.orientation;
+      imu_msg_.angular_velocity = last_imu_.angular_velocity;
+      imu_msg_.linear_acceleration = last_imu_.linear_acceleration;
+    }
+
+    // Dropout: probabilistically skip publishing this sample.
+    bool skip = false;
+    FaultEffect drop = reg.GetEffect(fault_key_, FaultKind::kDropout);
+    if (drop.active) {
+      double p = drop.severity * drop.Param("dropout_prob", 1.0);
+      std::uniform_real_distribution<double> u(0.0, 1.0);
+      if (u(rng_) < p) skip = true;
+    }
 
     if (enable_imu_pub_) {
+      // Clean ground-truth debug aid always published (NOT the sealed label).
       ground_truth_pub_.publish(ground_truth_msg_);
-      imu_pub_.publish(imu_msg_);
+      if (!skip) {
+        imu_pub_.publish(imu_msg_);
+      }
     }
+
+    // Cache the (possibly frozen) reading so the stuck fault freezes to it.
+    last_imu_ = imu_msg_;
+    stuck_valid_ = true;
     linear_vel_local_prev = linear_vel_local;
   }
 

@@ -87,6 +87,8 @@ add_library(flatland_plugins_lib
   src/gps.cpp
   src/variable_payload.cpp
   src/trajectory_recorder.cpp
+  src/fault_injection_registry.cpp
+  src/fault_injector.cpp
 )
 
 add_dependencies(flatland_plugins_lib ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -152,6 +154,13 @@ if(CATKIN_ENABLE_TESTING)
 
   catkin_add_gtest(wheel_friction_model_test test/wheel_friction_model_test.cpp)
   target_link_libraries(wheel_friction_model_test flatland_plugins_lib)
+
+  catkin_add_gtest(fault_injection_test test/fault_injection_test.cpp)
+  target_link_libraries(fault_injection_test flatland_plugins_lib)
+
+  add_rostest_gtest(fault_injector_test test/fault_injector_test.test
+                    test/fault_injector_test.cpp)
+  target_link_libraries(fault_injector_test flatland_plugins_lib)
 
   # ActuatorDynamics is a utility class (not a pluginlib plugin), so it needs no
   # entry in flatland_plugins.xml; only a gtest unit target is added here.
