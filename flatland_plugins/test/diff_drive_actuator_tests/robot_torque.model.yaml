@@ -1,0 +1,29 @@
+# Force/torque-limited diff-drive robot. The body is ~25 kg and the linear
+# actuator force is capped at 25 N, so the achievable acceleration is bounded to
+# a_max = F/m = 1.0 m/s^2 even when the commanded velocity step is large. Tested
+# in kinematic drive_mode (the ideal path would otherwise jump to the command).
+bodies:
+  - name: base
+    type: dynamic
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 100  # 100 * 0.25 m^2 = 25 kg
+        points: [[-0.25, -0.25],
+                 [ 0.25, -0.25],
+                 [ 0.25,  0.25],
+                 [-0.25,  0.25]]
+
+plugins:
+  - type: DiffDrive
+    name: base_drive
+    body: base
+    odom_frame_id: map
+    pub_rate: 100
+    enable_odom_tf_pub: false
+    linear_actuator:
+      max_force: 25.0  # [N] => a_max = 25 N / 25 kg = 1.0 m/s^2
+
+  - type: ModelTfPublisher
+    name: tf_publisher
+    publish_tf_world: true

@@ -1,0 +1,28 @@
+# Deadband-only diff-drive robot. The linear actuator has a 0.3 m/s deadzone:
+# a sub-threshold forward command is forced to zero (no motion); a command above
+# threshold drives normally. No latency, no force cap, kinematic drive_mode.
+bodies:
+  - name: base
+    type: dynamic
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 100
+        points: [[-0.25, -0.25],
+                 [ 0.25, -0.25],
+                 [ 0.25,  0.25],
+                 [-0.25,  0.25]]
+
+plugins:
+  - type: DiffDrive
+    name: base_drive
+    body: base
+    odom_frame_id: map
+    pub_rate: 100
+    enable_odom_tf_pub: false
+    linear_actuator:
+      deadband: 0.3  # [m/s] commands below this magnitude are zeroed
+
+  - type: ModelTfPublisher
+    name: tf_publisher
+    publish_tf_world: true

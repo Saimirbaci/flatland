@@ -1,0 +1,26 @@
+# Baseline diff-drive robot with NO actuator subnode. Proves the actuator
+# feature is opt-in: behaviour must match the legacy kinematic path exactly.
+bodies:
+  - name: base
+    type: dynamic
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 100  # ~25 kg over the 0.5 x 0.5 m footprint
+        points: [[-0.25, -0.25],
+                 [ 0.25, -0.25],
+                 [ 0.25,  0.25],
+                 [-0.25,  0.25]]
+
+plugins:
+  - type: DiffDrive
+    name: base_drive
+    body: base
+    odom_frame_id: map
+    pub_rate: 100
+    enable_odom_tf_pub: false
+    # drive_mode defaults to kinematic; no actuator subnode => pass-through.
+
+  - type: ModelTfPublisher
+    name: tf_publisher
+    publish_tf_world: true

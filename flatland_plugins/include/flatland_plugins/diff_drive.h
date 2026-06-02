@@ -45,6 +45,7 @@
  */
 
 #include <Box2D/Box2D.h>
+#include <flatland_plugins/actuator_dynamics.h>
 #include <flatland_plugins/update_timer.h>
 #include <flatland_plugins/dynamics_limits.h>
 #include <flatland_plugins/wheel_friction_model.h>
@@ -82,6 +83,10 @@ class DiffDrive : public flatland_server::ModelPlugin {
                                /// local velocity wrt to odom frame
   DynamicsLimits angular_dynamics_; ///< Angular dynamics constraints
   DynamicsLimits linear_dynamics_;  ///< Linear dynamics constraints
+  ActuatorDynamics linear_actuator_;   ///< Linear actuator/motor dynamics
+                                       /// (latency, deadband, force cap)
+  ActuatorDynamics angular_actuator_;  ///< Angular actuator/motor dynamics
+                                       /// (latency, deadband, torque cap)
   double angular_velocity_ = 0.0;
   double linear_velocity_ = 0.0;
 

@@ -1,0 +1,10 @@
+<!--
+Test launchfile for tricycle_actuator_test
+
+Runs a rosmaster so the TricycleDrive plugin's publish/subscribe path is live
+while the drive-actuator deadband behaviour is asserted end-to-end.
+-->
+<launch>
+  <test pkg="flatland_plugins" type="tricycle_actuator_test"
+        test-name="tricycle_actuator_test"/>
+</launch>

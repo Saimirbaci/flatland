@@ -1,0 +1,39 @@
+# Force-limited diff-drive robot in friction drive_mode. The wheels have ample
+# grip (high mu), so without a motor cap the body would accelerate fast; the
+# linear actuator force cap of 25 N (split 12.5 N per drive wheel) bounds the
+# total traction to ~25 N => a_max = F/m = 1.0 m/s^2. Proves the force cap acts
+# as min(grip, motor) on the friction path as well as the kinematic one.
+bodies:
+  - name: base
+    type: dynamic
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 100  # 25 kg
+        points: [[-0.25, -0.25],
+                 [ 0.25, -0.25],
+                 [ 0.25,  0.25],
+                 [-0.25,  0.25]]
+
+plugins:
+  - type: DiffDrive
+    name: base_drive
+    body: base
+    odom_frame_id: map
+    pub_rate: 100
+    enable_odom_tf_pub: false
+    drive_mode: friction
+    wheel_separation: 0.4
+    wheel_friction:
+      enabled: true
+      mu_long_static: 5.0   # very high grip so the motor force cap is the binding limit
+      mu_long_kinetic: 4.5
+      mu_lat_static: 5.0
+      mu_lat_kinetic: 4.5
+      static_slip_threshold: 0.05
+    linear_actuator:
+      max_force: 25.0  # [N] total => 12.5 N/wheel => a_max = 1.0 m/s^2
+
+  - type: ModelTfPublisher
+    name: tf_publisher
+    publish_tf_world: true

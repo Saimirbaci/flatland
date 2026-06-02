@@ -1,0 +1,85 @@
+# Tricycle robot (cleaner geometry) with a drive-actuator deadband of 0.3 m/s.
+# A sub-threshold forward command must be zeroed (no motion); above threshold it
+# drives normally. Geometry copied from tricycle_drive_tests/cleaner.model.yaml.
+bodies:
+  - name: base
+    type: dynamic
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 100
+        points: [ [-1.03, -0.337],
+                  [.07983, -0.337],
+                  [.30, -.16111],
+                  [.30, .16111],
+                  [.07983, 0.337],
+                  [-1.03, 0.337] ]
+  - name: front_wheel
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 1.0
+        points: [[ 0.0875, -0.0250],
+                 [ 0.0875,  0.0250],
+                 [-0.0875, 0.0250],
+                 [-0.0875, -0.0250]]
+
+  - name: rear_left_wheel
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 1.0
+        points: [[ 0.0875, -0.0255],
+                 [ 0.0875,  0.0255],
+                 [-0.0875, 0.0255],
+                 [-0.0875, -0.0255]]
+
+  - name: rear_right_wheel
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 1.0
+        points: [[ 0.0875, -0.0255],
+                 [ 0.0875,  0.0255],
+                 [-0.0875, 0.0255],
+                 [-0.0875, -0.0255]]
+
+joints:
+  - type: revolute
+    name: front_wheel_revolute
+    bodies:
+      - name: front_wheel
+        anchor: [0, 0]
+      - name: base
+        anchor: [0, 0]
+
+  - type: weld
+    name: rear_right_wheel_weld
+    bodies:
+      - name: rear_left_wheel
+        anchor: [0, 0]
+      - name: base
+        anchor: [-0.83, 0.29]
+
+  - type: weld
+    name: rear_left_wheel_weld
+    bodies:
+      - name: rear_right_wheel
+        anchor: [0, 0]
+      - name: base
+        anchor: [-0.83, -0.29]
+
+plugins:
+  - type: TricycleDrive
+    name: cleaner_drive
+    body: base
+    front_wheel_joint: front_wheel_revolute
+    rear_left_wheel_joint: rear_left_wheel_weld
+    rear_right_wheel_joint: rear_right_wheel_weld
+    odom_frame_id: map
+    drive_actuator:
+      deadband: 0.3  # [m/s] forward commands below this magnitude are zeroed
+
+  - type: ModelTfPublisher
+    name: tf_publisher
+    publish_tf_world: true

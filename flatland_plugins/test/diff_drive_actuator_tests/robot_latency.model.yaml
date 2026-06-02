@@ -1,0 +1,28 @@
+# Command-latency-only diff-drive robot. The linear actuator delays the forward
+# command by 0.2 s; at a 0.01 s step that is a 20-step transport deadtime before
+# the body starts to move. No deadband, no force cap, kinematic drive_mode.
+bodies:
+  - name: base
+    type: dynamic
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 100
+        points: [[-0.25, -0.25],
+                 [ 0.25, -0.25],
+                 [ 0.25,  0.25],
+                 [-0.25,  0.25]]
+
+plugins:
+  - type: DiffDrive
+    name: base_drive
+    body: base
+    odom_frame_id: map
+    pub_rate: 100
+    enable_odom_tf_pub: false
+    linear_actuator:
+      command_latency: 0.2  # [s] transport deadtime on the forward command
+
+  - type: ModelTfPublisher
+    name: tf_publisher
+    publish_tf_world: true

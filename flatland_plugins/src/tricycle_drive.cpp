@@ -45,6 +45,7 @@
  */
 
 #include <Box2D/Box2D.h>
+#include <cmath>
 #include <flatland_plugins/tricycle_drive.h>
 #include <flatland_server/debug_visualization.h>
 #include <flatland_server/model_plugin.h>
@@ -56,6 +57,22 @@
 #include <tf/tf.h>
 
 namespace flatland_plugins {
+
+namespace {
+// Clamp the achieved per-step acceleration (new_value - value) / dt to
+// +/- accel_cap, so the actuator effort limit modulates (further bounds) the
+// DynamicsLimits ramp rather than adding a second independent ramp. An infinite
+// cap (effort limit disabled) is a pass-through.
+double CapAcceleration(double value, double new_value, double accel_cap,
+                       double dt) {
+  if (!std::isfinite(accel_cap) || dt <= 0.0) {
+    return new_value;
+  }
+  double accel = (new_value - value) / dt;
+  accel = DynamicsLimits::Saturate(accel, -accel_cap, accel_cap);
+  return value + accel * dt;
+}
+}  // namespace
 
 void TricycleDrive::OnInitialize(const YAML::Node& config) {
   YamlReader r(config);
@@ -117,6 +134,15 @@ void TricycleDrive::OnInitialize(const YAML::Node& config) {
 
   // Linear dynamics constraints
   linear_dynamics_.Configure(r.SubnodeOpt("linear_dynamics", YamlReader::MAP).Node());
+
+  // Actuator/motor dynamics (command latency, deadband, force/torque cap).
+  // Opt-in: an absent or empty subnode leaves these as a pure pass-through so
+  // existing worlds behave identically. drive_actuator acts on the front-wheel
+  // drive speed command; steer_actuator acts on the steering-angle command.
+  drive_actuator_.Configure(
+      r.SubnodeOpt("drive_actuator", YamlReader::MAP).Node());
+  steer_actuator_.Configure(
+      r.SubnodeOpt("steer_actuator", YamlReader::MAP).Node());
 
   // Drive mode: "kinematic" (default, ideal SetLinearVelocity) keeps existing
   // worlds unchanged; "friction"/"dynamic" engages the force-based traction
@@ -386,9 +412,21 @@ void TricycleDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
   //   |d2δ[t]| <= angular_dynamics_.acceleration_limit_ 
 
   // twist message contains the speed and angle of the front wheel
-  delta_command_ = twist_msg_.angular.z;  // target steering angle
-  double theta = angle;                   // angle of robot in map frame
   double dt = timekeeper.GetStepSize();
+  const ros::Time& now = timekeeper.GetSimTime();
+
+  // Actuator/motor dynamics pipeline, driven by a single sim-time source: push
+  // the cached commands into the latency buffers, pull the latency-delayed
+  // values, then apply the deadband. The steering command is an angle [rad]
+  // (deadband/latency applied to the angle); the drive command is the
+  // front-wheel speed [m/s].
+  steer_actuator_.Push(twist_msg_.angular.z, now);
+  drive_actuator_.Push(twist_msg_.linear.x, now);
+  double steer_cmd = steer_actuator_.ApplyDeadband(steer_actuator_.Pull(now));
+  double drive_cmd = drive_actuator_.ApplyDeadband(drive_actuator_.Pull(now));
+
+  delta_command_ = steer_cmd;  // target steering angle
+  double theta = angle;        // angle of robot in map frame
 
   // In the simulation, the equations of motion have to be computed backwards
   // (4) Update the new commanded steering velocity
@@ -406,7 +444,16 @@ void TricycleDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
   }
 
   // Apply angular dynamics constraints
+  double d_delta_prev = d_delta_;
   d_delta_ = angular_dynamics_.Limit(d_delta_, d_delta_command, dt);
+
+  // Steering actuator torque limit modulates the steering angular acceleration
+  // (alpha_max = tau / I). The tricycle's 2nd-order kinematic model has no
+  // dedicated steering-column inertia, so the body rotational inertia is a
+  // coarse proxy; disabled (max_torque 0) leaves the rate unchanged.
+  d_delta_ = CapAcceleration(
+      d_delta_prev, d_delta_,
+      steer_actuator_.AccelerationCap(b2body->GetInertia()), dt);
 
   // (1) Update the new steering angle
   theta_f_ += d_delta_ * dt;
@@ -435,8 +482,13 @@ void TricycleDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
   // looking at the rear center, formulas obtained from avidbots robot systems
   // confluence page
 
-  // apply linear velocity and acceleration constraints
-  v_f_ = linear_dynamics_.Limit(v_f_, twist_msg_.linear.x, dt);
+  // apply linear velocity and acceleration constraints, then modulate the ramp
+  // with the drive actuator force limit (a_max = F / m, mass re-read each step
+  // for the variable-mass payload model).
+  double v_f_prev = v_f_;
+  v_f_ = linear_dynamics_.Limit(v_f_, drive_cmd, dt);
+  v_f_ = CapAcceleration(
+      v_f_prev, v_f_, drive_actuator_.AccelerationCap(b2body->GetMass()), dt);
 
   if (use_friction_drive_) {
     // Force-based traction: drive the front wheel and let the rear rolling
@@ -504,6 +556,17 @@ void TricycleDrive::ApplyFrictionDrive(b2Body* b2body, double dt) {
   b2Vec2 front_force = wheel_friction_.ComputeWheelForce(
       front_slip_long, front_slip_lat, normal_load, dt,
       surface_factor_at(front_world));
+
+  // Cap the driven (longitudinal) front-wheel force to the drive actuator force
+  // limit: effective traction is the lesser of available grip and motor force.
+  // The lateral component is passive grip, so it is left to the friction model.
+  // The front wheel is the only drive wheel, so it carries the full limit.
+  double motor_cap = drive_actuator_.ForceCap();
+  if (motor_cap > 0.0) {
+    front_force.x = static_cast<float>(
+        DynamicsLimits::Saturate(front_force.x, -motor_cap, motor_cap));
+  }
+
   b2Vec2 front_force_world =
       front_force.x * front_long_axis + front_force.y * front_lat_axis;
   b2body->ApplyForce(front_force_world, front_world, true);
