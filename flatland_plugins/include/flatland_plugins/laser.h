@@ -54,8 +54,10 @@
 #include <thirdparty/ThreadPool.h>
 #include <visualization_msgs/Marker.h>
 #include <Eigen/Dense>
+#include <deque>
 #include <random>
 #include <thread>
+#include <utility>
 
 #ifndef FLATLAND_PLUGINS_LASER_H
 #define FLATLAND_PLUGINS_LASER_H
@@ -100,6 +102,11 @@ class Laser : public ModelPlugin {
   std::vector<float> last_ranges_;  ///< last published ranges, for stuck fault
   bool last_scan_valid_ = false;    ///< whether last_ranges_ holds a scan
 
+  /// Max buffered scans for the latency fault (bounds the delay queue).
+  static constexpr size_t kMaxLatencyQueue = 256;
+  /// Pending scans held by the latency fault, keyed by sim-time release.
+  std::deque<std::pair<ros::Time, sensor_msgs::LaserScan>> latency_queue_;
+
   Eigen::Matrix3f m_body_to_laser_;        ///< tf from body to laser
   Eigen::Matrix3f m_world_to_body_;        ///< tf  from world to body
   Eigen::Matrix3f m_world_to_laser_;       ///< tf from world to laser
@@ -143,13 +150,28 @@ class Laser : public ModelPlugin {
 
   /**
    * @brief Apply any active fault effects to the freshly computed scan.
-   * @details Perturbs laser_scan_.ranges in place (sector occlusion, noise
-   * inflation, stuck/frozen) on the main thread. Returns true if the scan
+   * @details Perturbs laser_scan_.ranges in place on the main thread, in the
+   * order: sector occlusion -> noise inflation -> range bias -> ghost returns
+   * -> stuck/frozen cache, then evaluates dropout. Returns true if the scan
    * should be dropped (dropout fault). No active effect -> no change, returns
-   * false.
+   * false. Latency is handled separately in PublishScan().
    * @return true if this scan should not be published
    */
   bool ApplyLaserFaults();
+
+  /**
+   * @brief Publish the current scan, honouring the latency fault.
+   * @details When the latency fault is active the scan is buffered in a
+   * sim-time-keyed FIFO and released once the Timekeeper clock reaches its
+   * release instant (capture_time + severity*latency); the buffered message
+   * keeps its original header.stamp. With no latency fault the scan releases
+   * the same step, so the publish cadence is byte-for-byte identical to a clean
+   * run. Matured buffered scans are always drained, even on a dropped step.
+   * @param[in] timekeeper Object managing the simulation time
+   * @param[in] enqueue If true, buffer the current scan for release; if false
+   * (dropout fired) only drain already-buffered scans.
+   */
+  void PublishScan(const Timekeeper &timekeeper, bool enqueue);
 
   /**
    * @brief helper function to extract the paramters from the YAML Node

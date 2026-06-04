@@ -6,8 +6,10 @@
 #include <sensor_msgs/NavSatFix.h>
 #include <tf/transform_broadcaster.h>
 #include <Eigen/Dense>
+#include <deque>
 #include <random>
 #include <string>
+#include <utility>
 
 #ifndef FLATLAND_PLUGINS_GPS_H
 #define FLATLAND_PLUGINS_GPS_H
@@ -50,7 +52,15 @@ class Gps : public ModelPlugin {
   Eigen::Matrix3f m_body_to_gps_;  ///< tf from body to GPS
 
   std::string fault_key_;           ///< registry component key (model/plugin)
-  std::default_random_engine rng_;  ///< RNG for the dropout fault
+  std::default_random_engine rng_;  ///< RNG for dropout / noise faults
+
+  sensor_msgs::NavSatFix last_fix_;  ///< last fix, for the stuck/freeze fault
+  bool last_fix_valid_ = false;      ///< whether last_fix_ holds a fix
+
+  /// Max buffered fixes for the latency fault (bounds the delay queue).
+  static constexpr size_t kMaxLatencyQueue = 256;
+  /// Pending fixes held by the latency fault, keyed by sim-time release.
+  std::deque<std::pair<ros::Time, sensor_msgs::NavSatFix>> latency_queue_;
 
   /**
    * @brief Initialization for the plugin
@@ -81,6 +91,20 @@ class Gps : public ModelPlugin {
    * for publishing
    */
   void UpdateFix();
+
+  /**
+   * @brief Publish the current fix, honouring the latency fault.
+   * @details When the latency fault is active the fix is buffered in a
+   * sim-time-keyed FIFO and released once the Timekeeper clock reaches its
+   * release instant (capture_time + severity*latency); the buffered message
+   * keeps its original header.stamp. With no latency fault the fix releases the
+   * same step, so the publish cadence is byte-for-byte identical to a clean
+   * run. Matured buffered fixes are always drained, even on a dropped step.
+   * @param[in] timekeeper Object managing the simulation time
+   * @param[in] enqueue If true, buffer the current fix; if false (dropout
+   * fired) only drain already-buffered fixes.
+   */
+  void PublishFix(const Timekeeper &timekeeper, bool enqueue);
 };
 }
 

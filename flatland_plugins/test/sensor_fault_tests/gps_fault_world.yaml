@@ -1,0 +1,77 @@
+# GPS sensor-fault world. The robot publishes gps/fix exactly as a clean run;
+# the FaultInjector perturbs the fix in-band on a staggered schedule:
+#   noise_inflation [1,2]s : zero-mean Gaussian jitter on lat/lon (robot still)
+#   sensor_bias     [1,2]s : (existing) additive offset, exercised together
+#   stuck/freeze    [3,4]s : fix is frozen (republished) while the robot moves
+#   latency         [5,..)s: fix delivery is delayed by 0.4 s (stamp lags)
+#   dropout         [6,..)s: (existing) fixes are dropped
+# Ground truth goes ONLY to the sealed sidecar + reserved topic.
+properties: {}
+layers:
+  - name: "2d"
+    map: "map.yaml"
+    color: [0, 1, 0, 1]
+models:
+  - name: robot
+    pose: [0, 0, 0]
+    model: "gps_fault_robot.model.yaml"
+
+plugins:
+  - type: FaultInjector
+    name: faults
+    ground_truth_topic: "/_ground_truth/faults"
+    ground_truth_path: "/tmp/flatland_gps_fault_ground_truth.json"
+    faults:
+      - id: gps_noise_1
+        type: noise_inflation
+        target: { model: robot, component: gps, topic: gps/fix }
+        trigger: { kind: time }
+        severity:
+          onset_time: 1.0
+          ramp_up: 0.0
+          hold: 1.0
+          ramp_down: 0.0
+          peak: 1.0
+          profile: step
+        params:
+          noise: 0.0005
+
+      - id: gps_freeze_1
+        type: stuck
+        target: { model: robot, component: gps, topic: gps/fix }
+        trigger: { kind: time }
+        severity:
+          onset_time: 3.0
+          ramp_up: 0.0
+          hold: 1.0
+          ramp_down: 0.0
+          peak: 1.0
+          profile: step
+
+      - id: gps_latency_1
+        type: latency
+        target: { model: robot, component: gps, topic: gps/fix }
+        trigger: { kind: time }
+        severity:
+          onset_time: 5.0
+          ramp_up: 0.0
+          hold: -1
+          ramp_down: 0.0
+          peak: 1.0
+          profile: step
+        params:
+          latency: 0.4
+
+      - id: gps_bias_1
+        type: sensor_bias
+        target: { model: robot, component: gps, topic: gps/fix }
+        trigger: { kind: time }
+        severity:
+          onset_time: 1.0
+          ramp_up: 0.0
+          hold: 1.0
+          ramp_down: 0.0
+          peak: 1.0
+          profile: step
+        params:
+          bias: 0.0001

@@ -1,0 +1,65 @@
+# Laser sensor-fault world. The robot publishes scan exactly as a clean run;
+# the FaultInjector perturbs the scan in-band on a staggered schedule so each
+# new fault is observable in its own time window:
+#   sensor_bias  [1,2]s : every finite range gets a +0.5 m offset
+#   ghost_return [3,4]s : spurious finite returns appear in empty (NaN) beams
+#   latency      [5,..)s: scan delivery is delayed by 0.5 s (stamp lags)
+# Ground truth goes ONLY to the sealed sidecar + reserved topic.
+properties: {}
+layers:
+  - name: "2d"
+    map: "map.yaml"
+    color: [0, 1, 0, 1]
+models:
+  - name: robot
+    pose: [0, 0, 0]
+    model: "laser_fault_robot.model.yaml"
+
+plugins:
+  - type: FaultInjector
+    name: faults
+    ground_truth_topic: "/_ground_truth/faults"
+    ground_truth_path: "/tmp/flatland_laser_fault_ground_truth.json"
+    faults:
+      - id: laser_bias_1
+        type: sensor_bias
+        target: { model: robot, component: laser_front, topic: scan }
+        trigger: { kind: time }
+        severity:
+          onset_time: 1.0
+          ramp_up: 0.0
+          hold: 1.0
+          ramp_down: 0.0
+          peak: 1.0
+          profile: step
+        params:
+          bias: 0.5
+
+      - id: laser_ghost_1
+        type: ghost_return
+        target: { model: robot, component: laser_front, topic: scan }
+        trigger: { kind: time }
+        severity:
+          onset_time: 3.0
+          ramp_up: 0.0
+          hold: 1.0
+          ramp_down: 0.0
+          peak: 1.0
+          profile: step
+        params:
+          ghost_prob: 1.0
+          ghost_range: 5.0
+
+      - id: laser_latency_1
+        type: latency
+        target: { model: robot, component: laser_front, topic: scan }
+        trigger: { kind: time }
+        severity:
+          onset_time: 5.0
+          ramp_up: 0.0
+          hold: -1
+          ramp_down: 0.0
+          peak: 1.0
+          profile: step
+        params:
+          latency: 0.5

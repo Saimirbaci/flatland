@@ -44,9 +44,14 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <flatland_msgs/Collisions.h>
 #include <flatland_plugins/update_timer.h>
 #include <flatland_server/model_plugin.h>
 #include <ros/ros.h>
+#include <deque>
+#include <random>
+#include <string>
+#include <utility>
 
 #ifndef FLATLAND_PLUGINS_BUMPER_H
 #define FLATLAND_PLUGINS_BUMPER_H
@@ -90,6 +95,17 @@ class Bumper : public ModelPlugin {
   std::map<b2Contact *, ContactState> contact_states_;
   ros::Publisher collisions_publisher_;  ///< For publishing the collisions
 
+  std::string fault_key_;           ///< registry component key (model/plugin)
+  std::default_random_engine rng_;  ///< RNG for dropout / ghost-contact faults
+
+  flatland_msgs::Collisions last_collisions_;  ///< last msg, for stuck/freeze
+  bool last_collisions_valid_ = false;  ///< whether last_collisions_ is set
+
+  /// Max buffered messages for the latency fault (bounds the delay queue).
+  static constexpr size_t kMaxLatencyQueue = 256;
+  /// Pending messages held by the latency fault, keyed by sim-time release.
+  std::deque<std::pair<ros::Time, flatland_msgs::Collisions>> latency_queue_;
+
   /**
    * @brief Initialization for the plugin
    * @param[in] config Plugin YAML Node
@@ -126,6 +142,29 @@ class Bumper : public ModelPlugin {
    * @param[in] oldManifold Manifold from the previous iteration
    */
   void PostSolve(b2Contact *contact, const b2ContactImpulse *impulse) override;
+
+  /**
+   * @brief Publish the collisions message, honouring the latency fault.
+   * @details When the latency fault is active the message is buffered in a
+   * sim-time-keyed FIFO and released once the Timekeeper clock reaches its
+   * release instant (capture_time + severity*latency); the buffered message
+   * keeps its original header.stamp. With no latency fault it releases the same
+   * step, so the publish cadence is byte-for-byte identical to a clean run.
+   * @param[in] timekeeper Object managing the simulation time
+   * @param[in] collisions The message to (buffer and) publish
+   * @param[in] enqueue If true, buffer the message; if false (dropout fired)
+   * only drain already-buffered messages.
+   */
+  void PublishCollisions(const Timekeeper &timekeeper,
+                         const flatland_msgs::Collisions &collisions,
+                         bool enqueue);
+
+  /**
+   * @brief Release every buffered collisions message whose sim-time release has
+   * arrived, in FIFO order. A no-op when the latency fault is inactive.
+   * @param[in] timekeeper Object managing the simulation time
+   */
+  void DrainLatencyQueue(const Timekeeper &timekeeper);
 };
 };
 

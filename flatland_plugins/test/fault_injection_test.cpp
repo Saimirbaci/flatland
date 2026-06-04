@@ -129,11 +129,58 @@ TEST(ParseTest, FaultKindAndProfile) {
   EXPECT_EQ(ParseFaultKind("torque_loss"), FaultKind::kTorqueLoss);
   EXPECT_EQ(ParseFaultKind("laser_sector_occlusion"),
             FaultKind::kLaserSectorOcclusion);
+  EXPECT_EQ(ParseFaultKind("latency"), FaultKind::kLatency);
+  EXPECT_EQ(ParseFaultKind("ghost_return"), FaultKind::kGhostReturn);
   EXPECT_EQ(ParseFaultKind("not_a_fault"), FaultKind::kUnknown);
 
   EXPECT_EQ(ParseRampProfile("step"), RampProfile::kStep);
   EXPECT_EQ(ParseRampProfile("exp"), RampProfile::kExp);
   EXPECT_EQ(ParseRampProfile("anything_else"), RampProfile::kLinear);
+}
+
+// --- New sensor fault kinds: registry round-trip + params -------------------
+TEST(RegistryTest, LatencyAndGhostReturnRoundTrip) {
+  auto &reg = FaultInjectionRegistry::Get();
+  reg.Reset();
+
+  std::map<std::string, FaultEffect> snapshot;
+
+  FaultEffect latency;
+  latency.active = true;
+  latency.severity = 0.5;
+  latency.params["latency"] = 0.4;  // seconds of delay at full severity
+  snapshot[FaultInjectionRegistry::MakeKey(ComponentKey("robot", "laser_front"),
+                                           FaultKind::kLatency)] = latency;
+
+  FaultEffect ghost;
+  ghost.active = true;
+  ghost.severity = 0.8;
+  ghost.params["ghost_prob"] = 0.3;
+  ghost.params["ghost_range"] = 5.0;
+  snapshot[FaultInjectionRegistry::MakeKey(ComponentKey("robot", "laser_front"),
+                                           FaultKind::kGhostReturn)] = ghost;
+  reg.SetEffects(snapshot);
+
+  FaultEffect got_lat =
+      reg.GetEffect(ComponentKey("robot", "laser_front"), FaultKind::kLatency);
+  EXPECT_TRUE(got_lat.active);
+  EXPECT_NEAR(got_lat.severity, 0.5, 1e-9);
+  EXPECT_NEAR(got_lat.Param("latency"), 0.4, 1e-9);
+
+  FaultEffect got_ghost = reg.GetEffect(ComponentKey("robot", "laser_front"),
+                                        FaultKind::kGhostReturn);
+  EXPECT_TRUE(got_ghost.active);
+  EXPECT_NEAR(got_ghost.severity, 0.8, 1e-9);
+  EXPECT_NEAR(got_ghost.Param("ghost_prob"), 0.3, 1e-9);
+  EXPECT_NEAR(got_ghost.Param("ghost_range"), 5.0, 1e-9);
+  // Unset params fall back to their defaults.
+  EXPECT_NEAR(got_ghost.Param("ghost_force", 1.0), 1.0, 1e-9);
+
+  // The two new kinds are addressed independently of every existing kind.
+  EXPECT_FALSE(
+      reg.GetEffect(ComponentKey("robot", "laser_front"), FaultKind::kStuck)
+          .active);
+  reg.Reset();
 }
 
 // --- Registry round-trip + Reset isolation --------------------------------
