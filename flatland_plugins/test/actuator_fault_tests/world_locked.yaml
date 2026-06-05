@@ -1,0 +1,32 @@
+# locked_wheel: the left wheel is seized to ~0 speed, so a straight forward
+# command makes the robot pivot about the locked side (large yaw change) through
+# Box2D. Step profile, active from t=0.
+properties: {}
+layers:
+  - name: "2d"
+    map: "../diff_drive_tests/map.yaml"
+    color: [0, 1, 0, 1]
+models:
+  - name: robot
+    pose: [0, 0, 0]
+    model: "robot.model.yaml"
+
+plugins:
+  - type: FaultInjector
+    name: faults
+    ground_truth_topic: "/_ground_truth/faults"
+    ground_truth_path: "/tmp/flatland_actuator_locked_gt.json"
+    faults:
+      - id: locked_wheel_1
+        type: locked_wheel
+        target: { model: robot, component: diff_drive, topic: odometry/filtered }
+        trigger: { kind: time }
+        severity:
+          onset_time: 0.0
+          ramp_up: 0.0
+          hold: -1
+          ramp_down: 0.0
+          peak: 1.0
+          profile: step
+        params:
+          side: 0.0   # 0 = left wheel seized

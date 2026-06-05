@@ -47,6 +47,7 @@
 
 #include "flatland_plugins/actuator_dynamics.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -94,8 +95,10 @@ void ActuatorDynamics::Push(double cmd, const ros::Time &stamp) {
   }
 }
 
-double ActuatorDynamics::Pull(const ros::Time &now) {
-  if (command_latency_ <= 0.0) {
+double ActuatorDynamics::Pull(const ros::Time &now, double extra_latency) {
+  const double total_latency = command_latency_ + std::max(0.0, extra_latency);
+
+  if (total_latency <= 0.0) {
     // Disabled: pass-through. Collapse the buffer to the latest command so it
     // never accumulates, and remember it for steps with no new command.
     if (!command_buffer_.empty()) {
@@ -108,27 +111,41 @@ double ActuatorDynamics::Pull(const ros::Time &now) {
   // Before a full latency has elapsed (relative to sim-time zero) no command
   // can have traversed the delay line yet; return the held value. This also
   // avoids an underflow of ros::Time (which is unsigned) when now < latency.
-  if (now.toSec() < command_latency_) {
+  if (now.toSec() < total_latency) {
     return last_command_;
   }
 
-  // Zero-order hold delay line: advance the active command to the newest entry
-  // that has already "arrived" (stamp <= now - latency), discarding the entries
-  // it supersedes. The retained value persists in last_command_ until the next
-  // command arrives, so a command pushed at t takes effect at t + latency.
-  ros::Time cutoff = now - ros::Duration(command_latency_);
-  while (!command_buffer_.empty() && command_buffer_.front().first <= cutoff) {
-    last_command_ = command_buffer_.front().second;
-    command_buffer_.pop_front();
+  // Zero-order hold delay line. The total latency can vary step to step (a
+  // controller_latency fault adds transport deadtime on top of the configured
+  // command_latency_), so the buffer is scanned NON-destructively: a larger
+  // latency on a later step must still be able to reach an older command. The
+  // ZOH value is the newest entry that has already "arrived" (stamp <= cutoff);
+  // entries are dropped only by the Push-time kMaxBufferSize bound. With
+  // extra_latency == 0 the returned value is identical to a destructive drain.
+  const ros::Time cutoff = now - ros::Duration(total_latency);
+  double value = last_command_;
+  for (const auto &entry : command_buffer_) {
+    if (entry.first <= cutoff) {
+      value = entry.second;  // a newer command has arrived; advance the hold
+    } else {
+      break;  // buffer is in push (non-decreasing stamp) order: nothing newer
+    }
   }
-  return last_command_;
+  // Persist the held value so it survives the Push-time eviction of old front
+  // entries; the scan above always re-derives it from any retained entries.
+  last_command_ = value;
+  return value;
 }
 
-double ActuatorDynamics::AccelerationCap(double inertia) const {
+double ActuatorDynamics::AccelerationCap(double inertia,
+                                         double effort_scale) const {
+  // The +inf "disabled" sentinel is keyed on the CONFIGURED limit, not the
+  // scaled value: a fully degraded actuator (effort_scale == 0) must clamp the
+  // acceleration to 0 (a dead motor), not silently remove the cap.
   if (max_effort_ <= 0.0 || inertia <= 0.0) {
     return std::numeric_limits<double>::infinity();  // disabled / no cap
   }
-  return max_effort_ / inertia;
+  return (max_effort_ * std::max(0.0, effort_scale)) / inertia;
 }
 
 }  // namespace flatland_plugins

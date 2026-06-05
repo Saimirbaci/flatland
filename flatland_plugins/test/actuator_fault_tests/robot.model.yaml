@@ -1,0 +1,28 @@
+# Diff-drive robot for the actuator-fault rostest. The body is ~25 kg and the
+# linear actuator force is capped at 25 N (a_max = F/m = 1.0 m/s^2), so
+# motor_degradation has an effort cap to shrink. wheel_separation is set so the
+# per-wheel speed faults (asymmetric_wheel_speed / locked_wheel) use the real
+# track-width decomposition rather than the fallback approximation. No
+# command_latency is configured, so controller_latency adds the only deadtime.
+bodies:
+  - name: base
+    type: dynamic
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 100  # 100 * 0.25 m^2 = 25 kg
+        points: [[-0.25, -0.25],
+                 [ 0.25, -0.25],
+                 [ 0.25,  0.25],
+                 [-0.25,  0.25]]
+
+plugins:
+  - type: DiffDrive
+    name: diff_drive
+    body: base
+    odom_frame_id: map
+    pub_rate: 100
+    enable_odom_tf_pub: false
+    wheel_separation: 0.5
+    linear_actuator:
+      max_force: 25.0  # [N] => a_max = 25 N / 25 kg = 1.0 m/s^2

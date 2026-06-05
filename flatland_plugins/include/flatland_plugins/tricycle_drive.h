@@ -160,10 +160,12 @@ class TricycleDrive : public flatland_server::ModelPlugin {
    *                rolling-constrained (longitudinally free, laterally gripped).
    *                Each wheel's anisotropic Coulomb friction force comes from
    *                wheel_friction_.
-   * @param[in]     b2body The model body to drive
-   * @param[in]     dt     The physics timestep [s]
+   * @param[in]     b2body       The model body to drive
+   * @param[in]     dt           The physics timestep [s]
+   * @param[in]     effort_scale Transient multiplier on the drive force cap
+   *                             (1.0 = unchanged; motor_degradation shrinks it)
    */
-  void ApplyFrictionDrive(b2Body* b2body, double dt);
+  void ApplyFrictionDrive(b2Body* b2body, double dt, double effort_scale = 1.0);
 
   /**
   * @name          TwistCallback
