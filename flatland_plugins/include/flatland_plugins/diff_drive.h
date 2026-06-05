@@ -100,6 +100,21 @@ class DiffDrive : public flatland_server::ModelPlugin {
 
   std::string fault_key_;  ///< registry component key (model/plugin)
 
+  // Measurement-domain odometry fault state (encoder_drift / odom_slip). The
+  // true Box2D motion is never touched; these only make the REPORTED odom pose
+  // (odom_msg_ + odom tf) dead-reckon away from the ground truth. Until either
+  // fault first goes active, odom is copied verbatim from the ground truth so a
+  // clean run stays byte-for-byte identical. The divergence persists after the
+  // fault window closes (a real odometry error does not heal itself).
+  bool odom_diverged_ = false;     ///< latched once a meas. odom fault fires
+  double odom_x_ = 0.0;            ///< dead-reckoned reported odom x [m]
+  double odom_y_ = 0.0;            ///< dead-reckoned reported odom y [m]
+  double odom_yaw_ = 0.0;          ///< dead-reckoned reported odom yaw [rad]
+  double last_gt_x_ = 0.0;         ///< previous ground-truth x sample [m]
+  double last_gt_y_ = 0.0;         ///< previous ground-truth y sample [m]
+  double last_gt_angle_ = 0.0;     ///< previous ground-truth yaw sample [rad]
+  bool gt_sample_valid_ = false;   ///< true once last_gt_* hold a sample
+
   /**
    * @name          OnInitialize
    * @brief         override the BeforePhysicsStep method

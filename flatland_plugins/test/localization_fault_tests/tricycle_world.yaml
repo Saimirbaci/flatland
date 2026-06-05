@@ -1,0 +1,49 @@
+# Tricycle parity scenario for the measurement-domain odometry faults. Reuses
+# the existing cleaner tricycle model; the FaultInjector applies encoder_drift +
+# odom_slip to its TricycleDrive (component "cleaner_drive") so the reported odom
+# diverges from the clean ground_truth while the true motion is unchanged.
+properties: {}
+layers:
+  - name: "2d"
+    map: "map.yaml"
+    color: [0, 1, 0, 1]
+models:
+  - name: robot
+    pose: [0, 0, 0]
+    model: "../tricycle_drive_tests/cleaner.model.yaml"
+
+plugins:
+  - type: FaultInjector
+    name: faults
+    ground_truth_topic: "/_ground_truth/faults"
+    ground_truth_path: "/tmp/flatland_tricycle_odom_ground_truth.json"
+    faults:
+      - id: encoder_drift_tri
+        type: encoder_drift
+        target: { model: robot, component: cleaner_drive }
+        trigger: { kind: time }
+        severity:
+          onset_time: 2.0
+          ramp_up: 0.5
+          hold: -1
+          ramp_down: 0.0
+          peak: 1.0
+          profile: linear
+        params:
+          x_rate: 0.10
+          y_rate: 0.05
+          yaw_rate: 0.02
+
+      - id: odom_slip_tri
+        type: odom_slip
+        target: { model: robot, component: cleaner_drive }
+        trigger: { kind: time }
+        severity:
+          onset_time: 2.0
+          ramp_up: 0.5
+          hold: -1
+          ramp_down: 0.0
+          peak: 1.0
+          profile: linear
+        params:
+          slip: 0.30

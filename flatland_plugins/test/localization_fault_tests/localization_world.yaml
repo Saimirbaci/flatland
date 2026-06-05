@@ -1,0 +1,95 @@
+# Canonical localization-failure scenario. The robot publishes odom / imu /
+# amcl_pose / tf exactly as in a clean run; the FaultInjector below perturbs
+# those in-band signals on a schedule while writing the ground-truth label ONLY
+# to the sealed sidecar file and the reserved /_ground_truth/faults topic.
+#
+# Exercises the four localization/odometry faults that motivate this work:
+#   * encoder_drift + odom_slip   on the diff_drive  (measurement-domain odom)
+#   * sensor_bias                 on the imu          (heading bias)
+#   * amcl_divergence             on the localization (AMCL estimate drift)
+properties: {}
+layers:
+  - name: "2d"
+    map: "map.yaml"
+    color: [0, 1, 0, 1]
+models:
+  - name: robot
+    pose: [0, 0, 0]
+    model: "robot.model.yaml"
+
+plugins:
+  - type: FaultInjector
+    name: faults
+    ground_truth_topic: "/_ground_truth/faults"
+    ground_truth_path: "/tmp/flatland_localization_ground_truth.json"
+    faults:
+      # Encoder drift: the reported odom pose accumulates a fixed-direction
+      # error while the true motion is unchanged. Time-triggered, ramps in.
+      - id: encoder_drift_1
+        type: encoder_drift
+        target: { model: robot, component: diff_drive, topic: odometry/filtered }
+        trigger: { kind: time }
+        severity:
+          onset_time: 2.0
+          ramp_up: 1.0
+          hold: -1            # indefinite once active (error never heals)
+          ramp_down: 0.0
+          peak: 1.0
+          profile: linear
+        params:
+          x_rate: 0.10        # m/s of odom-x drift at full severity
+          y_rate: 0.05        # m/s of odom-y drift at full severity
+          yaw_rate: 0.02      # rad/s of odom-yaw drift at full severity
+
+      # Slip-induced odometry error: the reported translation over-counts once
+      # the robot has travelled 1 m (condition trigger), chained after the drift.
+      - id: odom_slip_1
+        type: odom_slip
+        target: { model: robot, component: diff_drive, topic: odometry/filtered }
+        trigger:
+          kind: condition
+          condition: distance_travelled
+          threshold: 1.0
+          depends_on: encoder_drift_1
+        severity:
+          onset_time: 0.0
+          ramp_up: 0.5
+          hold: -1
+          ramp_down: 0.0
+          peak: 1.0
+          profile: linear
+        params:
+          slip: 0.30          # over-report distance by 30% at full severity
+
+      # IMU heading bias (= sensor_bias on the imu component). Time-triggered.
+      - id: imu_bias_1
+        type: sensor_bias
+        target: { model: robot, component: imu, topic: imu/filtered }
+        trigger: { kind: time }
+        severity:
+          onset_time: 3.0
+          ramp_up: 0.5
+          hold: -1
+          ramp_down: 0.0
+          peak: 1.0
+          profile: linear
+        params:
+          bias: 0.30          # rad of yaw bias at full severity
+
+      # AMCL divergence: the localization estimate drifts away from truth while
+      # odom stays put. Time-triggered, linear ramp.
+      - id: amcl_divergence_1
+        type: amcl_divergence
+        target: { model: robot, component: localization, topic: amcl_pose }
+        trigger: { kind: time }
+        severity:
+          onset_time: 4.0
+          ramp_up: 1.0
+          hold: -1
+          ramp_down: 0.0
+          peak: 1.0
+          profile: linear
+        params:
+          x: 0.40             # m of map->odom x divergence at full severity
+          y: 0.20             # m of map->odom y divergence at full severity
+          yaw: 0.10           # rad of heading divergence at full severity

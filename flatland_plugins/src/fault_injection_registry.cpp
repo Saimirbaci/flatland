@@ -169,6 +169,9 @@ FaultKind ParseFaultKind(const std::string &type) {
   if (type == "asymmetric_drive") return FaultKind::kAsymmetricDrive;
   if (type == "deadband") return FaultKind::kDeadband;
   if (type == "stuck_wheel") return FaultKind::kStuckWheel;
+  if (type == "encoder_drift") return FaultKind::kEncoderDrift;
+  if (type == "odom_slip") return FaultKind::kOdomSlip;
+  if (type == "amcl_divergence") return FaultKind::kAmclDivergence;
   return FaultKind::kUnknown;
 }
 

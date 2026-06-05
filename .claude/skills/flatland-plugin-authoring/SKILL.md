@@ -1,6 +1,6 @@
 ---
 name: flatland-plugin-authoring
-description: Scaffold a new Flatland model or world plugin end-to-end (header, impl, pluginlib export, XML manifest, CMake, tests). Invoke when adding a sensor, drive, or world behavior — the most common change in this repo (recent: imu, gps, diff-drive tf, variable_payload).
+description: Scaffold a new Flatland model or world plugin end-to-end (header, impl, pluginlib export, XML manifest, CMake, tests). Invoke when adding a sensor, drive, or world behavior — the most common change in this repo (recent: imu, gps, diff-drive tf, variable_payload, fault_injector, localization_fault).
 ---
 
 # Authoring a Flatland plugin
@@ -9,7 +9,13 @@ A plugin is only "done" when all six pieces exist. Copy the closest existing plu
 starting blank: `imu.cpp` (sensor publishing), `gps.cpp`, `laser.cpp` (sensor + raycast),
 `diff_drive.cpp` (drive + tf), `bumper.cpp`/`bool_sensor.cpp` (collision), `world_random_wall.cpp`
 (world plugin), `variable_payload.cpp` (drives a body's mass/CoG via `Body::SetMassData`, optional
-command + state topics — see the `flatland-physics-box2d` skill for the mass hook).
+command + state topics — see the `flatland-physics-box2d` skill for the mass hook),
+`localization_fault.cpp` (synthetic-sensor model plugin: reads the body's true world pose each step
+and publishes a `geometry_msgs` estimate + a computed `tf` — no Box2D mutation).
+
+If the plugin perturbs/consumes the fault-injection registry (a sensor/drive fault hook, or a new
+fault kind), use the **`flatland-fault-injection`** skill — it covers the registry hook pattern, the
+causal-vs-measurement-domain split, and the sealed ground-truth contract.
 
 ## Steps
 1. **Header** — `flatland_plugins/include/flatland_plugins/<name>.h`

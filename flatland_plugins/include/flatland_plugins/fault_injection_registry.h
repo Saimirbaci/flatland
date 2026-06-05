@@ -77,6 +77,14 @@ enum class FaultKind {
   kAsymmetricDrive,
   kDeadband,
   kStuckWheel,
+  // Localization / odometry faults (measurement-domain: they perturb the
+  // reported odom / localization estimate while the true Box2D motion is
+  // unchanged -- the opposite of the causal drivetrain faults above). Note:
+  // "IMU bias" is intentionally NOT a new kind here; it is the existing
+  // kSensorBias / kSensorDrift applied to the imu component.
+  kEncoderDrift,
+  kOdomSlip,
+  kAmclDivergence,
 };
 
 /**

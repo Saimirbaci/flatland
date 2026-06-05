@@ -356,16 +356,71 @@ void DiffDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
       ground_truth_msg_.twist.twist.angular.z = angular_vel;
     }
 
+    // Measurement-domain odometry faults: encoder_drift and odom_slip perturb
+    // the REPORTED odom (pose, odom tf, encoder-like twist) only; the true
+    // Box2D body state in ground_truth_msg_ is left untouched -- the opposite
+    // of the causal drivetrain faults above. Until one of these faults first
+    // goes active we copy the ground-truth pose verbatim, so a clean run is
+    // byte-for-byte identical to before. Once diverged we dead-reckon the
+    // integrated truth delta with slip/drift applied; the error persists after
+    // the fault window closes (a real odometry error does not heal itself).
+    auto& reg = FaultInjectionRegistry::Get();
+    FaultEffect slip = reg.GetEffect(fault_key_, FaultKind::kOdomSlip);
+    FaultEffect edrift = reg.GetEffect(fault_key_, FaultKind::kEncoderDrift);
+    double slip_factor = 1.0;  // multiplies the reported translation/twist
+
+    bool just_latched = false;
+    if (!odom_diverged_ && (slip.active || edrift.active)) {
+      // First onset: seed the dead-reckoned pose from the current ground truth
+      // so the report is continuous at the instant the fault begins.
+      odom_diverged_ = true;
+      odom_x_ = position.x;
+      odom_y_ = position.y;
+      odom_yaw_ = angle;
+      just_latched = true;
+    }
+    if (odom_diverged_ && !just_latched) {
+      if (slip.active) {
+        // >0 over-reports distance (wheel slips, encoder over-counts), <0
+        // under-reports.
+        slip_factor = 1.0 + slip.severity * slip.Param("slip");
+      }
+      double dx = gt_sample_valid_ ? (position.x - last_gt_x_) : 0.0;
+      double dy = gt_sample_valid_ ? (position.y - last_gt_y_) : 0.0;
+      double dyaw = gt_sample_valid_ ? (angle - last_gt_angle_) : 0.0;
+      odom_x_ += slip_factor * dx;
+      odom_y_ += slip_factor * dy;
+      odom_yaw_ += dyaw;
+      if (edrift.active) {
+        // Unbounded per-axis accumulation at a per-second rate (severity 1).
+        odom_x_ += edrift.severity * edrift.Param("x_rate") * dt;
+        odom_y_ += edrift.severity * edrift.Param("y_rate") * dt;
+        odom_yaw_ += edrift.severity * edrift.Param("yaw_rate") * dt;
+      }
+    }
+    last_gt_x_ = position.x;
+    last_gt_y_ = position.y;
+    last_gt_angle_ = angle;
+    gt_sample_valid_ = true;
+
+    // Reported base pose: the dead-reckoned pose when diverged, otherwise the
+    // ground truth verbatim (clean-run invariant).
+    double report_x = odom_diverged_ ? odom_x_ : position.x;
+    double report_y = odom_diverged_ ? odom_y_ : position.y;
+    double report_yaw = odom_diverged_ ? odom_yaw_ : angle;
+
     // add the noise to odom messages
     odom_msg_.header.stamp = timekeeper.GetSimTime();
     odom_msg_.pose.pose = ground_truth_msg_.pose.pose;
     odom_msg_.twist.twist = ground_truth_msg_.twist.twist;
-    odom_msg_.pose.pose.position.x += noise_gen_[0](rng_);
-    odom_msg_.pose.pose.position.y += noise_gen_[1](rng_);
+    odom_msg_.pose.pose.position.x = report_x + noise_gen_[0](rng_);
+    odom_msg_.pose.pose.position.y = report_y + noise_gen_[1](rng_);
     odom_msg_.pose.pose.orientation =
-        tf::createQuaternionMsgFromYaw(angle + noise_gen_[2](rng_));
-    odom_msg_.twist.twist.linear.x += noise_gen_[3](rng_);
-    odom_msg_.twist.twist.linear.y += noise_gen_[4](rng_);
+        tf::createQuaternionMsgFromYaw(report_yaw + noise_gen_[2](rng_));
+    odom_msg_.twist.twist.linear.x =
+        slip_factor * odom_msg_.twist.twist.linear.x + noise_gen_[3](rng_);
+    odom_msg_.twist.twist.linear.y =
+        slip_factor * odom_msg_.twist.twist.linear.y + noise_gen_[4](rng_);
     odom_msg_.twist.twist.angular.z += noise_gen_[5](rng_);
 
     if (enable_odom_pub_) {
@@ -380,10 +435,13 @@ void DiffDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
       twist_pub_msg.header.stamp = timekeeper.GetSimTime();
       twist_pub_msg.header.frame_id = odom_msg_.child_frame_id;
 
-      // Forward velocity in twist.linear.x
-      twist_pub_msg.twist.twist.linear.x = cos(angle) * linear_vel_local.x +
-                                           sin(angle) * linear_vel_local.y +
-                                           noise_gen_[3](rng_);
+      // Forward velocity in twist.linear.x. odom_slip scales the encoder-like
+      // velocity to match the over/under-reported odom pose (encoder_drift is a
+      // pose accumulation only and does not appear here).
+      twist_pub_msg.twist.twist.linear.x =
+          slip_factor * (cos(angle) * linear_vel_local.x +
+                         sin(angle) * linear_vel_local.y) +
+          noise_gen_[3](rng_);
 
       // Angular velocity in twist.angular.z
       twist_pub_msg.twist.twist.angular.z = angular_vel + noise_gen_[5](rng_);
