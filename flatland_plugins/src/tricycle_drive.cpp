@@ -381,16 +381,63 @@ void TricycleDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
     ground_truth_msg_.twist.twist.angular.y = 0;
     ground_truth_msg_.twist.twist.angular.z = angular_vel;
 
+    // Measurement-domain odometry faults (encoder_drift / odom_slip): perturb
+    // the REPORTED odom (pose, encoder-like twist) only; the true Box2D body
+    // state in ground_truth_msg_ is untouched. Until one of these faults first
+    // goes active we copy the ground-truth pose verbatim (clean-run invariant);
+    // once diverged we dead-reckon the integrated truth delta with slip/drift
+    // applied, and the error persists after the fault window (never heals).
+    double dt = timekeeper.GetStepSize();
+    auto& reg = FaultInjectionRegistry::Get();
+    FaultEffect slip = reg.GetEffect(fault_key_, FaultKind::kOdomSlip);
+    FaultEffect edrift = reg.GetEffect(fault_key_, FaultKind::kEncoderDrift);
+    double slip_factor = 1.0;
+
+    bool just_latched = false;
+    if (!odom_diverged_ && (slip.active || edrift.active)) {
+      odom_diverged_ = true;
+      odom_x_ = position.x;
+      odom_y_ = position.y;
+      odom_yaw_ = angle;
+      just_latched = true;
+    }
+    if (odom_diverged_ && !just_latched) {
+      if (slip.active) {
+        slip_factor = 1.0 + slip.severity * slip.Param("slip");
+      }
+      double dx = gt_sample_valid_ ? (position.x - last_gt_x_) : 0.0;
+      double dy = gt_sample_valid_ ? (position.y - last_gt_y_) : 0.0;
+      double dyaw = gt_sample_valid_ ? (angle - last_gt_angle_) : 0.0;
+      odom_x_ += slip_factor * dx;
+      odom_y_ += slip_factor * dy;
+      odom_yaw_ += dyaw;
+      if (edrift.active) {
+        odom_x_ += edrift.severity * edrift.Param("x_rate") * dt;
+        odom_y_ += edrift.severity * edrift.Param("y_rate") * dt;
+        odom_yaw_ += edrift.severity * edrift.Param("yaw_rate") * dt;
+      }
+    }
+    last_gt_x_ = position.x;
+    last_gt_y_ = position.y;
+    last_gt_angle_ = angle;
+    gt_sample_valid_ = true;
+
+    double report_x = odom_diverged_ ? odom_x_ : position.x;
+    double report_y = odom_diverged_ ? odom_y_ : position.y;
+    double report_yaw = odom_diverged_ ? odom_yaw_ : angle;
+
     // add the noise to odom messages
     odom_msg_.header.stamp = timekeeper.GetSimTime();
     odom_msg_.pose.pose = ground_truth_msg_.pose.pose;
     odom_msg_.twist.twist = ground_truth_msg_.twist.twist;
-    odom_msg_.pose.pose.position.x += noise_gen_[0](rng_);
-    odom_msg_.pose.pose.position.y += noise_gen_[1](rng_);
+    odom_msg_.pose.pose.position.x = report_x + noise_gen_[0](rng_);
+    odom_msg_.pose.pose.position.y = report_y + noise_gen_[1](rng_);
     odom_msg_.pose.pose.orientation =
-        tf::createQuaternionMsgFromYaw(angle + noise_gen_[2](rng_));
-    odom_msg_.twist.twist.linear.x += noise_gen_[3](rng_);
-    odom_msg_.twist.twist.linear.y += noise_gen_[4](rng_);
+        tf::createQuaternionMsgFromYaw(report_yaw + noise_gen_[2](rng_));
+    odom_msg_.twist.twist.linear.x =
+        slip_factor * odom_msg_.twist.twist.linear.x + noise_gen_[3](rng_);
+    odom_msg_.twist.twist.linear.y =
+        slip_factor * odom_msg_.twist.twist.linear.y + noise_gen_[4](rng_);
     odom_msg_.twist.twist.angular.z += noise_gen_[5](rng_);
 
     ground_truth_pub_.publish(ground_truth_msg_);
@@ -421,15 +468,37 @@ void TricycleDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
   double dt = timekeeper.GetStepSize();
   const ros::Time& now = timekeeper.GetSimTime();
 
+  // Actuator-stage drivetrain faults read up-front, because they modulate the
+  // actuator pipeline (not the post-ramp command): controller_latency must be
+  // known before Pull, motor_degradation before the effort caps. No active
+  // effect -> extra_latency 0 / effort_scale 1.0 -> the pipeline is unchanged.
+  // (asymmetric_wheel_speed / locked_wheel are diff_drive-only: a tricycle has
+  // a single front drive wheel, so a per-rear-wheel speed imbalance is not
+  // physically meaningful here.)
+  auto& fault_reg = FaultInjectionRegistry::Get();
+  double extra_latency = 0.0;
+  FaultEffect cl =
+      fault_reg.GetEffect(fault_key_, FaultKind::kControllerLatency);
+  if (cl.active) extra_latency = cl.severity * cl.Param("latency");
+  double effort_scale = 1.0;
+  FaultEffect md =
+      fault_reg.GetEffect(fault_key_, FaultKind::kMotorDegradation);
+  if (md.active) {
+    effort_scale = DynamicsLimits::Saturate(
+        1.0 - md.severity * md.Param("degrade", 1.0), 0.0, 1.0);
+  }
+
   // Actuator/motor dynamics pipeline, driven by a single sim-time source: push
   // the cached commands into the latency buffers, pull the latency-delayed
-  // values, then apply the deadband. The steering command is an angle [rad]
-  // (deadband/latency applied to the angle); the drive command is the
-  // front-wheel speed [m/s].
+  // values (plus any controller_latency extra deadtime), then apply the
+  // deadband. The steering command is an angle [rad] (deadband/latency applied
+  // to the angle); the drive command is the front-wheel speed [m/s].
   steer_actuator_.Push(twist_msg_.angular.z, now);
   drive_actuator_.Push(twist_msg_.linear.x, now);
-  double steer_cmd = steer_actuator_.ApplyDeadband(steer_actuator_.Pull(now));
-  double drive_cmd = drive_actuator_.ApplyDeadband(drive_actuator_.Pull(now));
+  double steer_cmd =
+      steer_actuator_.ApplyDeadband(steer_actuator_.Pull(now, extra_latency));
+  double drive_cmd =
+      drive_actuator_.ApplyDeadband(drive_actuator_.Pull(now, extra_latency));
 
   delta_command_ = steer_cmd;  // target steering angle
   double theta = angle;        // angle of robot in map frame
@@ -459,7 +528,7 @@ void TricycleDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
   // coarse proxy; disabled (max_torque 0) leaves the rate unchanged.
   d_delta_ = CapAcceleration(
       d_delta_prev, d_delta_,
-      steer_actuator_.AccelerationCap(b2body->GetInertia()), dt);
+      steer_actuator_.AccelerationCap(b2body->GetInertia(), effort_scale), dt);
 
   // (1) Update the new steering angle
   theta_f_ += d_delta_ * dt;
@@ -494,13 +563,14 @@ void TricycleDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
   double v_f_prev = v_f_;
   v_f_ = linear_dynamics_.Limit(v_f_, drive_cmd, dt);
   v_f_ = CapAcceleration(
-      v_f_prev, v_f_, drive_actuator_.AccelerationCap(b2body->GetMass()), dt);
+      v_f_prev, v_f_,
+      drive_actuator_.AccelerationCap(b2body->GetMass(), effort_scale), dt);
 
   // Drivetrain fault perturbations: applied to the (already limited) drive
   // speed and steering angle BEFORE they reach Box2D, so the motion / odom / tf
   // reflect the fault causally. No active effect -> unchanged.
   {
-    auto& reg = FaultInjectionRegistry::Get();
+    auto& reg = fault_reg;
     double loss = 0.0;
     FaultEffect tl = reg.GetEffect(fault_key_, FaultKind::kTorqueLoss);
     if (tl.active) loss = std::max(loss, tl.severity * tl.Param("loss", 1.0));
@@ -523,7 +593,7 @@ void TricycleDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
   if (use_friction_drive_) {
     // Force-based traction: drive the front wheel and let the rear rolling
     // constraints + Box2D solver integrate the body, allowing real slip.
-    ApplyFrictionDrive(b2body, dt);
+    ApplyFrictionDrive(b2body, dt, effort_scale);
   } else {
     double v_x = v_f_ * cos(theta_f_) * cos(theta);  // x velocity in world
     double v_y = v_f_ * cos(theta_f_) * sin(theta);  // y velocity in world
@@ -550,7 +620,8 @@ void TricycleDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
   }
 }
 
-void TricycleDrive::ApplyFrictionDrive(b2Body* b2body, double dt) {
+void TricycleDrive::ApplyFrictionDrive(b2Body* b2body, double dt,
+                                      double effort_scale) {
   // Normal load split evenly across the three wheels (front + two rear). A
   // geometry-weighted or z-load split is left to the 2.5D contact backlog task.
   double normal_load = b2body->GetMass() * WheelFrictionModel::kGravity / 3.0;
@@ -591,8 +662,11 @@ void TricycleDrive::ApplyFrictionDrive(b2Body* b2body, double dt) {
   // limit: effective traction is the lesser of available grip and motor force.
   // The lateral component is passive grip, so it is left to the friction model.
   // The front wheel is the only drive wheel, so it carries the full limit.
-  double motor_cap = drive_actuator_.ForceCap();
-  if (motor_cap > 0.0) {
+  // The existence of a cap is keyed on the CONFIGURED limit; the (possibly
+  // motor_degradation-scaled) value sets its magnitude, so full degradation
+  // clamps the front-wheel motor force to 0 rather than leaving it uncapped.
+  if (drive_actuator_.ForceCap() > 0.0) {
+    double motor_cap = drive_actuator_.ForceCap(effort_scale);
     front_force.x = static_cast<float>(
         DynamicsLimits::Saturate(front_force.x, -motor_cap, motor_cap));
   }

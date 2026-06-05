@@ -244,36 +244,54 @@ void DiffDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
   double dt = timekeeper.GetStepSize();
   const ros::Time& now = timekeeper.GetSimTime();
 
+  // Actuator-stage drivetrain faults read up-front, because they modulate the
+  // actuator pipeline (not the post-ramp velocity): controller_latency must be
+  // known before Pull, motor_degradation before the effort cap. No active
+  // effect -> extra_latency 0 / effort_scale 1.0 -> the pipeline is unchanged.
+  auto& fault_reg = FaultInjectionRegistry::Get();
+  double extra_latency = 0.0;
+  FaultEffect cl =
+      fault_reg.GetEffect(fault_key_, FaultKind::kControllerLatency);
+  if (cl.active) extra_latency = cl.severity * cl.Param("latency");
+  double effort_scale = 1.0;
+  FaultEffect md =
+      fault_reg.GetEffect(fault_key_, FaultKind::kMotorDegradation);
+  if (md.active) {
+    effort_scale = DynamicsLimits::Saturate(
+        1.0 - md.severity * md.Param("degrade", 1.0), 0.0, 1.0);
+  }
+
   // Actuator/motor dynamics pipeline, driven by a single sim-time source: push
   // the cached command into each axis' latency buffer, pull the latency-delayed
-  // command, then apply the deadband before the existing acceleration ramp.
+  // command (plus any controller_latency extra deadtime), then apply the
+  // deadband before the existing acceleration ramp.
   linear_actuator_.Push(twist_msg_.linear.x, now);
   angular_actuator_.Push(twist_msg_.angular.z, now);
   double linear_cmd =
-      linear_actuator_.ApplyDeadband(linear_actuator_.Pull(now));
-  double angular_cmd =
-      angular_actuator_.ApplyDeadband(angular_actuator_.Pull(now));
+      linear_actuator_.ApplyDeadband(linear_actuator_.Pull(now, extra_latency));
+  double angular_cmd = angular_actuator_.ApplyDeadband(
+      angular_actuator_.Pull(now, extra_latency));
 
   // Acceleration ramp (existing behaviour), then modulate it with the actuator
   // effort limit: the force/torque cap bounds the achievable per-step
   // acceleration (a_max = F/m, alpha_max = tau/I). Mass and rotational inertia
   // are re-read from the Box2D body each step so the variable-mass payload
-  // model is respected.
-  linear_velocity_ =
-      CapAcceleration(linear_velocity_,
-                      linear_dynamics_.Limit(linear_velocity_, linear_cmd, dt),
-                      linear_actuator_.AccelerationCap(b2body->GetMass()), dt);
+  // model is respected. motor_degradation shrinks the effort via effort_scale.
+  linear_velocity_ = CapAcceleration(
+      linear_velocity_,
+      linear_dynamics_.Limit(linear_velocity_, linear_cmd, dt),
+      linear_actuator_.AccelerationCap(b2body->GetMass(), effort_scale), dt);
   angular_velocity_ = CapAcceleration(
       angular_velocity_,
       angular_dynamics_.Limit(angular_velocity_, angular_cmd, dt),
-      angular_actuator_.AccelerationCap(b2body->GetInertia()), dt);
+      angular_actuator_.AccelerationCap(b2body->GetInertia(), effort_scale), dt);
 
   // Drivetrain fault perturbations: applied to the (already limited) commanded
   // velocities BEFORE they reach Box2D, so the resulting motion / odom / tf
   // reflect the fault causally rather than as a cosmetic number edit. No active
   // effect -> velocities are unchanged.
   {
-    auto& reg = FaultInjectionRegistry::Get();
+    auto& reg = fault_reg;
     double loss = 0.0;
     FaultEffect tl = reg.GetEffect(fault_key_, FaultKind::kTorqueLoss);
     if (tl.active) loss = std::max(loss, tl.severity * tl.Param("loss", 1.0));
@@ -290,6 +308,56 @@ void DiffDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
       angular_velocity_ += asym.severity * asym.Param("yaw_bias");
     }
 
+    // Per-wheel speed faults: decompose the commanded body twist into the left
+    // (+y) and right (-y) wheel contact speeds, scale one side, and recompose.
+    // This couples a linear drop with a yaw drift (a true wheel-speed imbalance
+    // / a seized wheel), distinct from asymmetric_drive's pure additive yaw
+    // bias. With no track width configured (wheel_separation_ <= 0) fall back to
+    // an equivalent coupled linear-drop + yaw-bias approximation. No active
+    // effect -> the velocities are left exactly as-is.
+    FaultEffect aws =
+        reg.GetEffect(fault_key_, FaultKind::kAsymmetricWheelSpeed);
+    FaultEffect lw = reg.GetEffect(fault_key_, FaultKind::kLockedWheel);
+    if (aws.active || lw.active) {
+      double left_factor = 1.0;
+      double right_factor = 1.0;
+      if (aws.active) {
+        double f = DynamicsLimits::Saturate(
+            1.0 - aws.severity * aws.Param("imbalance", 1.0), 0.0, 1.0);
+        if (aws.Param("side", 0.0) < 0.5) {
+          left_factor *= f;
+        } else {
+          right_factor *= f;
+        }
+      }
+      if (lw.active) {
+        // A locked wheel is seized: its speed scales to ~0 with severity.
+        double f = DynamicsLimits::Saturate(1.0 - lw.severity, 0.0, 1.0);
+        if (lw.Param("side", 0.0) < 0.5) {
+          left_factor *= f;
+        } else {
+          right_factor *= f;
+        }
+      }
+      if (wheel_separation_ > 0.0) {
+        double half = 0.5 * wheel_separation_;
+        // v at wheel = linear - angular * y_wheel (left at +half, right -half).
+        double v_l = linear_velocity_ - angular_velocity_ * half;
+        double v_r = linear_velocity_ + angular_velocity_ * half;
+        v_l *= left_factor;
+        v_r *= right_factor;
+        linear_velocity_ = 0.5 * (v_l + v_r);
+        angular_velocity_ = (v_r - v_l) / wheel_separation_;
+      } else {
+        // No geometry: slowing one wheel both drops the mean forward speed and
+        // turns the robot toward the slower side (slow left -> +yaw / CCW).
+        double drop = 1.0 - 0.5 * (left_factor + right_factor);
+        double yaw_bias = (right_factor - left_factor) * std::fabs(linear_velocity_);
+        linear_velocity_ *= (1.0 - drop);
+        angular_velocity_ += yaw_bias;
+      }
+    }
+
     FaultEffect db = reg.GetEffect(fault_key_, FaultKind::kDeadband);
     if (db.active) {
       double thr = db.severity * db.Param("deadband");
@@ -301,7 +369,7 @@ void DiffDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
     // Force-based traction: let the Box2D solver integrate the body under the
     // slip-limited friction forces at each wheel instead of overwriting the
     // velocity. This lets commanded motion exceed grip and produce real slip.
-    ApplyFrictionDrive(b2body, dt);
+    ApplyFrictionDrive(b2body, dt, effort_scale);
   } else {
     // we apply the twist velocities, this must be done every physics step to
     // make sure Box2D solver applies the correct velocity through out. The
@@ -356,16 +424,71 @@ void DiffDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
       ground_truth_msg_.twist.twist.angular.z = angular_vel;
     }
 
+    // Measurement-domain odometry faults: encoder_drift and odom_slip perturb
+    // the REPORTED odom (pose, odom tf, encoder-like twist) only; the true
+    // Box2D body state in ground_truth_msg_ is left untouched -- the opposite
+    // of the causal drivetrain faults above. Until one of these faults first
+    // goes active we copy the ground-truth pose verbatim, so a clean run is
+    // byte-for-byte identical to before. Once diverged we dead-reckon the
+    // integrated truth delta with slip/drift applied; the error persists after
+    // the fault window closes (a real odometry error does not heal itself).
+    auto& reg = FaultInjectionRegistry::Get();
+    FaultEffect slip = reg.GetEffect(fault_key_, FaultKind::kOdomSlip);
+    FaultEffect edrift = reg.GetEffect(fault_key_, FaultKind::kEncoderDrift);
+    double slip_factor = 1.0;  // multiplies the reported translation/twist
+
+    bool just_latched = false;
+    if (!odom_diverged_ && (slip.active || edrift.active)) {
+      // First onset: seed the dead-reckoned pose from the current ground truth
+      // so the report is continuous at the instant the fault begins.
+      odom_diverged_ = true;
+      odom_x_ = position.x;
+      odom_y_ = position.y;
+      odom_yaw_ = angle;
+      just_latched = true;
+    }
+    if (odom_diverged_ && !just_latched) {
+      if (slip.active) {
+        // >0 over-reports distance (wheel slips, encoder over-counts), <0
+        // under-reports.
+        slip_factor = 1.0 + slip.severity * slip.Param("slip");
+      }
+      double dx = gt_sample_valid_ ? (position.x - last_gt_x_) : 0.0;
+      double dy = gt_sample_valid_ ? (position.y - last_gt_y_) : 0.0;
+      double dyaw = gt_sample_valid_ ? (angle - last_gt_angle_) : 0.0;
+      odom_x_ += slip_factor * dx;
+      odom_y_ += slip_factor * dy;
+      odom_yaw_ += dyaw;
+      if (edrift.active) {
+        // Unbounded per-axis accumulation at a per-second rate (severity 1).
+        odom_x_ += edrift.severity * edrift.Param("x_rate") * dt;
+        odom_y_ += edrift.severity * edrift.Param("y_rate") * dt;
+        odom_yaw_ += edrift.severity * edrift.Param("yaw_rate") * dt;
+      }
+    }
+    last_gt_x_ = position.x;
+    last_gt_y_ = position.y;
+    last_gt_angle_ = angle;
+    gt_sample_valid_ = true;
+
+    // Reported base pose: the dead-reckoned pose when diverged, otherwise the
+    // ground truth verbatim (clean-run invariant).
+    double report_x = odom_diverged_ ? odom_x_ : position.x;
+    double report_y = odom_diverged_ ? odom_y_ : position.y;
+    double report_yaw = odom_diverged_ ? odom_yaw_ : angle;
+
     // add the noise to odom messages
     odom_msg_.header.stamp = timekeeper.GetSimTime();
     odom_msg_.pose.pose = ground_truth_msg_.pose.pose;
     odom_msg_.twist.twist = ground_truth_msg_.twist.twist;
-    odom_msg_.pose.pose.position.x += noise_gen_[0](rng_);
-    odom_msg_.pose.pose.position.y += noise_gen_[1](rng_);
+    odom_msg_.pose.pose.position.x = report_x + noise_gen_[0](rng_);
+    odom_msg_.pose.pose.position.y = report_y + noise_gen_[1](rng_);
     odom_msg_.pose.pose.orientation =
-        tf::createQuaternionMsgFromYaw(angle + noise_gen_[2](rng_));
-    odom_msg_.twist.twist.linear.x += noise_gen_[3](rng_);
-    odom_msg_.twist.twist.linear.y += noise_gen_[4](rng_);
+        tf::createQuaternionMsgFromYaw(report_yaw + noise_gen_[2](rng_));
+    odom_msg_.twist.twist.linear.x =
+        slip_factor * odom_msg_.twist.twist.linear.x + noise_gen_[3](rng_);
+    odom_msg_.twist.twist.linear.y =
+        slip_factor * odom_msg_.twist.twist.linear.y + noise_gen_[4](rng_);
     odom_msg_.twist.twist.angular.z += noise_gen_[5](rng_);
 
     if (enable_odom_pub_) {
@@ -380,10 +503,13 @@ void DiffDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
       twist_pub_msg.header.stamp = timekeeper.GetSimTime();
       twist_pub_msg.header.frame_id = odom_msg_.child_frame_id;
 
-      // Forward velocity in twist.linear.x
-      twist_pub_msg.twist.twist.linear.x = cos(angle) * linear_vel_local.x +
-                                           sin(angle) * linear_vel_local.y +
-                                           noise_gen_[3](rng_);
+      // Forward velocity in twist.linear.x. odom_slip scales the encoder-like
+      // velocity to match the over/under-reported odom pose (encoder_drift is a
+      // pose accumulation only and does not appear here).
+      twist_pub_msg.twist.twist.linear.x =
+          slip_factor * (cos(angle) * linear_vel_local.x +
+                         sin(angle) * linear_vel_local.y) +
+          noise_gen_[3](rng_);
 
       // Angular velocity in twist.angular.z
       twist_pub_msg.twist.twist.angular.z = angular_vel + noise_gen_[5](rng_);
@@ -408,7 +534,8 @@ void DiffDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
 
 }
 
-void DiffDrive::ApplyFrictionDrive(b2Body* b2body, double dt) {
+void DiffDrive::ApplyFrictionDrive(b2Body* b2body, double dt,
+                                  double effort_scale) {
   // Two drive wheels straddle the body x-axis at +/- half the track width.
   double half_track = 0.5 * wheel_separation_;
 
@@ -456,9 +583,11 @@ void DiffDrive::ApplyFrictionDrive(b2Body* b2body, double dt) {
     // available grip and motor force. The lateral component is passive grip
     // (not motor-driven), so it is left to the friction model. The total
     // drivetrain force is split evenly across the two drive wheels.
-    double motor_cap = linear_actuator_.ForceCap();
-    if (motor_cap > 0.0) {
-      double per_wheel_cap = 0.5 * motor_cap;
+    // The existence of a cap is keyed on the CONFIGURED limit; the (possibly
+    // motor_degradation-scaled) value sets its magnitude, so full degradation
+    // clamps the per-wheel motor force to 0 rather than leaving it uncapped.
+    if (linear_actuator_.ForceCap() > 0.0) {
+      double per_wheel_cap = 0.5 * linear_actuator_.ForceCap(effort_scale);
       force_local.x = static_cast<float>(DynamicsLimits::Saturate(
           force_local.x, -per_wheel_cap, per_wheel_cap));
     }

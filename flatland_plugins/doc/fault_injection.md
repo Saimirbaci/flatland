@@ -23,6 +23,7 @@ consumed *only* by the offline evaluation harness for scoring.
 | `FaultInjector` (WorldPlugin) | `flatland_plugins/src/fault_injector.cpp` | Parses the `faults:` list, evaluates triggers + severity ramps each step, writes effects into the registry, and emits ground truth **only** out-of-band. |
 | `FaultInjectionRegistry` (singleton) | `flatland_plugins/src/fault_injection_registry.cpp` | In-process store of the per-step active fault effects. Written once per step by `FaultInjector`, read by sensor/drive plugins. Also hosts the pure ramp/trigger math (`SeverityAt`, `ConditionMet`). |
 | Sensor/drive hooks | `imu.cpp`, `laser.cpp`, `gps.cpp`, `bumper.cpp`, `diff_drive.cpp`, `tricycle_drive.cpp` | Query the registry just before publishing/commanding and perturb **only** their normal output. No active effect → exact previous behavior. |
+| `LocalizationFault` (ModelPlugin) | `flatland_plugins/src/localization_fault.cpp` | Synthetic AMCL: publishes `amcl_pose` + the `map→odom` tf; injects `amcl_divergence` (estimate diverges from truth, odom untouched). |
 | `FaultGroundTruth[Array]` msgs | `flatland_msgs/msg/` | The sealed label schema. Published *only* on the reserved topic; never embedded in any sensor message. |
 | RCA bag launch | `flatland_plugins/launch/record_rca_bag.launch` | `rosbag record` that excludes `/_ground_truth.*` by prefix. |
 | Offline scorer | `flatland_plugins/scripts/fault_eval/score_rca.py` | The *only* consumer of the label. Turns (sealed truth, RCA hypotheses) into metrics. |
@@ -164,6 +165,74 @@ Drivetrain faults are applied **after** the existing actuator/dynamics ramp and
 **before** `SetLinearVelocity`/friction drive, and are clamped, so the resulting
 `odom`/`tf`/motion reflect the fault through Box2D rather than a cosmetic edit.
 
+#### Actuator-stage drivetrain faults
+
+These four perturb the drivetrain by modulating the shared **actuator-dynamics
+model** (`ActuatorDynamics`: the effort/force-torque cap and the command-latency
+delay line) rather than post-multiplying the commanded velocity. They are still
+fully **causal** — the true Box2D motion *and* the resulting `odom`/`tf` reflect
+them — and ground truth is sealed out-of-band exactly as for the drivetrain
+faults above. With no active effect the actuator pipeline is byte-for-byte the
+clean-run pipeline.
+
+| type | applies to | `params` | effect (acts through the actuator model) |
+|------|-----------|----------|------|
+| `motor_degradation` | diff_drive, tricycle_drive | `degrade` (0..1, default 1) | scales the actuator effort cap by `1 − severity·degrade`, lowering the achievable acceleration (`a_max = F/m`) and, in friction mode, the per-wheel motor force. **Requires** a configured `max_force`/`max_torque` to have any effect (it shrinks an existing cap). |
+| `asymmetric_wheel_speed` | diff_drive | `imbalance` (0..1, default 1), `side` (`<0.5` = left/+y, else right/−y) | decomposes the commanded twist into per-wheel speeds via `wheel_separation`, scales one side by `1 − severity·imbalance`, and recomposes → a coupled linear drop **and** yaw drift (distinct from `asymmetric_drive`'s pure additive yaw bias). With no `wheel_separation` it falls back to an equivalent linear-drop + yaw-bias approximation. |
+| `locked_wheel` | diff_drive | `side` (`<0.5` = left, else right) | scales one wheel's speed to `1 − severity` (≈0 at full severity) → a pivot; distinct from `stuck_wheel`, which drops *both* wheels. Same per-wheel recompose / fallback as `asymmetric_wheel_speed`. |
+| `controller_latency` | diff_drive, tricycle_drive | `latency` (s) | adds `severity·latency` of transport deadtime to the actuator command-latency delay line for the duration of the fault, so the drive response to a `cmd_vel` step is delayed (on top of any configured `command_latency`). |
+
+`asymmetric_wheel_speed` and `locked_wheel` are **diff_drive-only**: a tricycle
+has a single front drive wheel, so a per-rear-wheel speed imbalance is not
+physically meaningful there.
+
+### Localization / odometry faults
+
+These are the **localization-failure class**: the perturbation that motivates an
+RCA over odom / IMU / localization signals. Unlike the drivetrain faults above
+they are **measurement-domain, NOT causal** — the true Box2D motion is left
+untouched; only the *reported* odom pose, encoder velocity, and the synthetic
+localization estimate diverge from the ground truth. (Contrast `torque_loss` /
+`wheel_slip`, which physically change how the robot moves.)
+
+| type | applies to | `params` | effect (measurement-domain) |
+|------|-----------|----------|------|
+| `encoder_drift` | diff_drive, tricycle_drive | `x_rate`, `y_rate`, `yaw_rate` (per-second at severity 1) | reported odom pose dead-reckons away from truth at the given rate; true motion unchanged |
+| `odom_slip` | diff_drive, tricycle_drive | `slip` | reported translation (odom delta + encoder twist) is scaled by `1 + severity·slip` (`>0` over-reports, `<0` under-reports) |
+| `amcl_divergence` | `LocalizationFault` component | `x`, `y`, `yaw` | localization estimate (`amcl_pose`) and the `map→odom` tf diverge from truth by the severity-scaled offset; odom is untouched |
+
+**IMU bias** for a localization-failure scenario is **not a new type** — it is the
+existing `sensor_bias` / `sensor_drift` applied to the `imu` component. Those
+perturb the IMU orientation (yaw) and gyro (`wz`) channels (`sensor_drift`
+accumulates a heading drift), exactly what an EKF/AMCL stack consumes.
+
+**Onset & persistence semantics.** `encoder_drift` / `odom_slip` latch a
+"diverged" state the first time either fires: until then the reported odom is
+copied **byte-for-byte** from the ground truth (a clean run is unchanged). Once
+latched, the dead-reckoned odom integrates the per-step truth delta with
+slip/drift applied, and the accumulated error **persists after the fault window
+closes** — a real odometry error does not heal itself. `amcl_divergence` instead
+tracks the severity envelope directly (estimate offset grows with severity, then
+holds), so it relaxes back toward truth if the fault ramps down.
+
+#### The `LocalizationFault` plugin (synthetic AMCL)
+
+Flatland ships no localization node, so the `LocalizationFault` **model plugin**
+(`flatland_plugins/src/localization_fault.cpp`) stands in for one. Each step it
+reads the body's true world pose and publishes:
+
+* `amcl_pose` (`geometry_msgs/PoseWithCovarianceStamped`, in the `map_frame_id`
+  frame) — the localization estimate. **In-band** (RCA may consume).
+* the `map_frame_id → odom_frame_id` tf, computed as
+  `estimate · truth⁻¹` in SE(2).
+
+**Clean-run contract:** with no `amcl_divergence` active the estimate equals the
+truth and `map→odom` is the **identity** transform. This assumes flatland's
+diff_drive/tricycle odom is anchored at the spawn/world origin (so the `odom`
+frame coincides with `map`). Config: `body`, `map_frame_id` (default `map`),
+`odom_frame_id` (default `odom`), `amcl_pose_pub` (default `amcl_pose`),
+`update_rate`, `publish_tf` (default `true`).
+
 ## Sealed ground truth
 
 * **Reserved topic** `/_ground_truth/faults` (`flatland_msgs/FaultGroundTruthArray`)
@@ -184,9 +253,9 @@ See `record_rca_bag.launch` for the exclusion config and
 ## Producer / consumer contract
 
 * **In-band (RCA may consume):** every robot topic — `scan`, `imu/filtered`,
-  `gps/fix`, `odometry/filtered`, `twist`, `tf`, `/clock`, and the clean
-  per-plugin `*/ground_truth` debug aids. These are recorded by
-  `record_rca_bag.launch`.
+  `gps/fix`, `odometry/filtered`, `twist`, `amcl_pose`, `tf` (incl. `map→odom`),
+  `/clock`, and the clean per-plugin `*/ground_truth` debug aids. These are
+  recorded by `record_rca_bag.launch`.
 * **Sealed (RCA must NOT consume):** the reserved `/_ground_truth/...` topic and
   the sidecar manifest file. Excluded from the bag; consumed only by the scorer.
 

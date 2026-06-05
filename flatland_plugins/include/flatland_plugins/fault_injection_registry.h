@@ -79,6 +79,22 @@ enum class FaultKind {
   kAsymmetricDrive,
   kDeadband,
   kStuckWheel,
+  // Actuator-stage drivetrain faults: causal perturbations that act THROUGH the
+  // shared ActuatorDynamics model (effort cap / command-latency delay line)
+  // rather than post-multiplying the commanded velocity, so the true motion and
+  // the resulting odom/tf reflect them. See doc/fault_injection.md.
+  kMotorDegradation,     ///< scales the actuator effort cap (lower achievable a)
+  kAsymmetricWheelSpeed, ///< per-wheel speed imbalance (coupled linear+yaw)
+  kLockedWheel,          ///< one wheel seized to ~0 speed (pivot)
+  kControllerLatency,    ///< extra command transport deadtime on the delay line
+  // Localization / odometry faults (measurement-domain: they perturb the
+  // reported odom / localization estimate while the true Box2D motion is
+  // unchanged -- the opposite of the causal drivetrain faults above). Note:
+  // "IMU bias" is intentionally NOT a new kind here; it is the existing
+  // kSensorBias / kSensorDrift applied to the imu component.
+  kEncoderDrift,
+  kOdomSlip,
+  kAmclDivergence,
 };
 
 /**

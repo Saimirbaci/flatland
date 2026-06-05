@@ -38,4 +38,7 @@
   <class type="flatland_plugins::FaultInjector" base_class_type="flatland_server::WorldPlugin">
     <description>YAML-driven time/condition-triggered fault injection with sealed out-of-band ground truth</description>
   </class>
+  <class type="flatland_plugins::LocalizationFault" base_class_type="flatland_server::ModelPlugin">
+    <description>Synthetic AMCL pose estimate + map-&gt;odom tf with injectable localization divergence</description>
+  </class>
 </library>

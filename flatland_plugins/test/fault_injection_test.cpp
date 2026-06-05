@@ -131,7 +131,20 @@ TEST(ParseTest, FaultKindAndProfile) {
             FaultKind::kLaserSectorOcclusion);
   EXPECT_EQ(ParseFaultKind("latency"), FaultKind::kLatency);
   EXPECT_EQ(ParseFaultKind("ghost_return"), FaultKind::kGhostReturn);
+  // Localization / odometry faults.
+  EXPECT_EQ(ParseFaultKind("encoder_drift"), FaultKind::kEncoderDrift);
+  EXPECT_EQ(ParseFaultKind("odom_slip"), FaultKind::kOdomSlip);
+  EXPECT_EQ(ParseFaultKind("amcl_divergence"), FaultKind::kAmclDivergence);
+  // Actuator-stage drivetrain faults.
+  EXPECT_EQ(ParseFaultKind("motor_degradation"),
+            FaultKind::kMotorDegradation);
+  EXPECT_EQ(ParseFaultKind("asymmetric_wheel_speed"),
+            FaultKind::kAsymmetricWheelSpeed);
+  EXPECT_EQ(ParseFaultKind("locked_wheel"), FaultKind::kLockedWheel);
+  EXPECT_EQ(ParseFaultKind("controller_latency"),
+            FaultKind::kControllerLatency);
   EXPECT_EQ(ParseFaultKind("not_a_fault"), FaultKind::kUnknown);
+  EXPECT_EQ(ParseFaultKind("garbage"), FaultKind::kUnknown);
 
   EXPECT_EQ(ParseRampProfile("step"), RampProfile::kStep);
   EXPECT_EQ(ParseRampProfile("exp"), RampProfile::kExp);
