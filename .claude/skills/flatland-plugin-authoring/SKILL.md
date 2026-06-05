@@ -56,5 +56,9 @@ causal-vs-measurement-domain split, and the sealed ground-truth contract.
 
 ## Gotchas
 - Forgetting the `flatland_plugins.xml` entry → pluginlib can't find the class at runtime (compiles fine).
+- Sensor/drive plugins consult the fault-injection registry just before publishing/commanding
+  (`imu`/`laser`/`gps`/`bumper`/`diff_drive`/`tricycle_drive`). If your plugin emits sensor data or
+  drives a body, see the `flatland-fault-injection` skill for the hook pattern and the
+  no-active-effect-is-a-no-op invariant.
 - Never `new`/`delete` Box2D bodies; hold non-owning pointers into the model.
 - Use the model's `ros::NodeHandle`, not a fresh global one.

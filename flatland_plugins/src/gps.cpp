@@ -34,6 +34,8 @@ void Gps::BeforePhysicsStep(const Timekeeper &timekeeper) {
     // Fault perturbations applied to the NORMAL fix only, scaled by severity.
     // No active effect -> no change; the label is never written into the fix.
     auto& reg = FaultInjectionRegistry::Get();
+
+    // Bias: additive constant offset on latitude/longitude.
     FaultEffect bias = reg.GetEffect(fault_key_, FaultKind::kSensorBias);
     if (bias.active) {
       double b = bias.severity * bias.Param("bias");
@@ -41,6 +43,28 @@ void Gps::BeforePhysicsStep(const Timekeeper &timekeeper) {
       gps_fix_.longitude += b;
     }
 
+    // Noise inflation: zero-mean Gaussian noise on latitude/longitude.
+    FaultEffect noise = reg.GetEffect(fault_key_, FaultKind::kNoiseInflation);
+    if (noise.active) {
+      std::normal_distribution<double> n_gen(
+          0.0, noise.severity * noise.Param("noise"));
+      gps_fix_.latitude += n_gen(rng_);
+      gps_fix_.longitude += n_gen(rng_);
+    }
+
+    // Stuck/freeze: republish the last (perturbed) fix, pinning the position.
+    FaultEffect stuck = reg.GetEffect(fault_key_, FaultKind::kStuck);
+    if (stuck.active && last_fix_valid_) {
+      gps_fix_.latitude = last_fix_.latitude;
+      gps_fix_.longitude = last_fix_.longitude;
+      gps_fix_.altitude = last_fix_.altitude;
+    }
+
+    // Cache the (possibly perturbed) fix so the stuck fault freezes to it.
+    last_fix_ = gps_fix_;
+    last_fix_valid_ = true;
+
+    // Dropout: probabilistically skip publishing this fix.
     bool skip = false;
     FaultEffect drop = reg.GetEffect(fault_key_, FaultKind::kDropout);
     if (drop.active) {
@@ -50,14 +74,42 @@ void Gps::BeforePhysicsStep(const Timekeeper &timekeeper) {
     }
 
     gps_fix_.header.stamp = timekeeper.GetSimTime();
-    if (!skip) {
-      fix_publisher_.publish(gps_fix_);
-    }
+    // Latency-aware publish: when skip (dropout) we still drain matured
+    // buffered fixes but do not enqueue the current one.
+    PublishFix(timekeeper, !skip);
   }
 
   if (broadcast_tf_) {
     gps_tf_.header.stamp = timekeeper.GetSimTime();
     tf_broadcaster_.sendTransform(gps_tf_);
+  }
+}
+
+void Gps::PublishFix(const Timekeeper &timekeeper, bool enqueue) {
+  auto &reg = FaultInjectionRegistry::Get();
+  const ros::Time now = timekeeper.GetSimTime();
+
+  if (enqueue) {
+    double delay = 0.0;
+    FaultEffect lat = reg.GetEffect(fault_key_, FaultKind::kLatency);
+    if (lat.active) {
+      delay = lat.severity * lat.Param("latency");
+    }
+    // Original header.stamp (capture time) is preserved; only delivery slips.
+    latency_queue_.emplace_back(now + ros::Duration(delay), gps_fix_);
+  }
+
+  // Bound the queue so a large latency can't grow it without limit.
+  while (latency_queue_.size() > kMaxLatencyQueue) {
+    fix_publisher_.publish(latency_queue_.front().second);
+    latency_queue_.pop_front();
+  }
+
+  // Release every buffered fix whose sim-time release has arrived, in FIFO
+  // order. With no latency fault delay == 0 so the fix releases this step.
+  while (!latency_queue_.empty() && latency_queue_.front().first <= now) {
+    fix_publisher_.publish(latency_queue_.front().second);
+    latency_queue_.pop_front();
   }
 }
 

@@ -22,7 +22,7 @@ consumed *only* by the offline evaluation harness for scoring.
 |-------|----------|------|
 | `FaultInjector` (WorldPlugin) | `flatland_plugins/src/fault_injector.cpp` | Parses the `faults:` list, evaluates triggers + severity ramps each step, writes effects into the registry, and emits ground truth **only** out-of-band. |
 | `FaultInjectionRegistry` (singleton) | `flatland_plugins/src/fault_injection_registry.cpp` | In-process store of the per-step active fault effects. Written once per step by `FaultInjector`, read by sensor/drive plugins. Also hosts the pure ramp/trigger math (`SeverityAt`, `ConditionMet`). |
-| Sensor/drive hooks | `imu.cpp`, `laser.cpp`, `gps.cpp`, `diff_drive.cpp`, `tricycle_drive.cpp` | Query the registry just before publishing/commanding and perturb **only** their normal output. No active effect → exact previous behavior. |
+| Sensor/drive hooks | `imu.cpp`, `laser.cpp`, `gps.cpp`, `bumper.cpp`, `diff_drive.cpp`, `tricycle_drive.cpp` | Query the registry just before publishing/commanding and perturb **only** their normal output. No active effect → exact previous behavior. |
 | `LocalizationFault` (ModelPlugin) | `flatland_plugins/src/localization_fault.cpp` | Synthetic AMCL: publishes `amcl_pose` + the `map→odom` tf; injects `amcl_divergence` (estimate diverges from truth, odom untouched). |
 | `FaultGroundTruth[Array]` msgs | `flatland_msgs/msg/` | The sealed label schema. Published *only* on the reserved topic; never embedded in any sensor message. |
 | RCA bag launch | `flatland_plugins/launch/record_rca_bag.launch` | `rosbag record` that excludes `/_ground_truth.*` by prefix. |
@@ -127,14 +127,31 @@ only and scale with `severity`.
 ### Sensor faults
 | type | applies to | `params` | effect |
 |------|-----------|----------|--------|
-| `sensor_bias`   | imu, gps | `bias` | additive constant offset |
+| `sensor_bias`   | imu, gps, laser | `bias` | additive constant offset (laser: on every finite range) |
 | `sensor_drift`  | imu, gps | `bias` (per-second drift rate) | offset accumulates over active time |
 | `sensor_scale`  | imu | `scale` | multiplicative gain error (`1+severity·scale`) |
-| `noise_inflation` | imu, laser | `noise` (extra std-dev) | inflates Gaussian noise std |
-| `dropout`       | imu, laser, gps | `dropout_prob` (0..1) | randomly skips publishing a message |
-| `stuck`         | imu, laser | — | freezes (republishes the last) message |
+| `noise_inflation` | imu, laser, gps | `noise` (extra std-dev) | inflates Gaussian noise std (gps: on lat/lon) |
+| `dropout`       | imu, laser, gps, bumper | `dropout_prob` (0..1) | randomly skips publishing a message |
+| `stuck`         | imu, laser, gps, bumper | — | freezes (republishes the last) message |
 | `quantization`  | imu | `step` | rounds output to a coarse grid |
 | `laser_sector_occlusion` | laser | `sector_center`, `sector_width` (rad) | NaNs ranges inside an angular sector |
+| `ghost_return`  | laser, bumper | `ghost_prob` (0..1); laser: `ghost_range` (m); bumper: `ghost_force` | laser: spurious finite returns in (preferentially empty) beams, clamped to `[range_min, range_max]`; bumper: appends a phantom collision (message fields only) |
+| `latency`       | laser, gps, bumper | `latency` (s) | delays delivery by `severity·latency` (sim-time buffer, original stamp kept) — see the latency contract above |
+
+#### Latency fault contract
+
+The `latency` fault models delivery delay. When active, a sensor plugin pushes
+each finished message (laser `LaserScan`, GPS `NavSatFix`, bumper `Collisions`)
+into a small per-plugin FIFO queue keyed by a **sim-time** release instant
+`release = capture_sim_time + severity·latency`, and only publishes it once the
+`Timekeeper` sim clock reaches that release time. The buffered message keeps its
+**original `header.stamp`** (the capture time) — it is *not* re-stamped to the
+delivery time — so the RCA observes stale-but-schema-identical data (a growing
+timestamp lag), the realistic in-band signature of latency. The queue is bounded
+(old entries past a cap are flushed/published immediately so it cannot grow
+without limit) and is driven entirely by sim time, never wall clock, so the
+sealing and determinism guarantees are untouched. `severity = 0` (no active
+effect) leaves the publish path byte-for-byte identical to a clean run.
 
 ### Drivetrain faults
 | type | applies to | `params` | effect (causal — flows through physics) |

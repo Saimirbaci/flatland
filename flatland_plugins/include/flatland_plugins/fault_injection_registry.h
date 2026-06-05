@@ -71,6 +71,8 @@ enum class FaultKind {
   kStuck,
   kQuantization,
   kLaserSectorOcclusion,
+  kLatency,
+  kGhostReturn,
   // Drivetrain faults
   kTorqueLoss,
   kWheelSlip,

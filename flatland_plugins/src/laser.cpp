@@ -165,10 +165,9 @@ void Laser::BeforePhysicsStep(const Timekeeper& timekeeper) {
     bool skip = ApplyLaserFaults();
 
     laser_scan_.header.stamp = timekeeper.GetSimTime();
-    if (!skip) {
-      scan_publisher_.publish(laser_scan_);
-      publications_++;
-    }
+    // Latency-aware publish: when skip (dropout) we still drain matured
+    // buffered scans but do not enqueue the current one.
+    PublishScan(timekeeper, !skip);
   }
 
   if (broadcast_tf_) {
@@ -316,6 +315,38 @@ bool Laser::ApplyLaserFaults() {
     }
   }
 
+  // Range bias: additive constant offset on every finite return.
+  FaultEffect bias = reg.GetEffect(fault_key_, FaultKind::kSensorBias);
+  if (bias.active) {
+    float b = static_cast<float>(bias.severity * bias.Param("bias"));
+    for (size_t i = 0; i < n; i++) {
+      if (std::isfinite(laser_scan_.ranges[i])) {
+        laser_scan_.ranges[i] += b;
+      }
+    }
+  }
+
+  // Ghost returns: with a per-beam probability, inject a spurious finite range
+  // (clamped to [range_min, range_max] so the scan stays schema-valid),
+  // preferring beams that currently have no return (NaN).
+  FaultEffect ghost = reg.GetEffect(fault_key_, FaultKind::kGhostReturn);
+  if (ghost.active) {
+    double p = ghost.severity * ghost.Param("ghost_prob");
+    float gmax = static_cast<float>(ghost.Param("ghost_range", range_));
+    if (gmax <= 0.0f || gmax > range_) gmax = range_;
+    std::uniform_real_distribution<double> u(0.0, 1.0);
+    std::uniform_real_distribution<float> ghost_range(laser_scan_.range_min,
+                                                      gmax);
+    for (size_t i = 0; i < n; i++) {
+      const bool empty = !std::isfinite(laser_scan_.ranges[i]);
+      // Empty beams take the full probability; occupied beams a quarter of it.
+      const double beam_p = empty ? p : 0.25 * p;
+      if (u(rng_) < beam_p) {
+        laser_scan_.ranges[i] = ghost_range(rng_);
+      }
+    }
+  }
+
   // Stuck/frozen: republish the previous scan.
   FaultEffect stuck = reg.GetEffect(fault_key_, FaultKind::kStuck);
   if (stuck.active && last_scan_valid_ &&
@@ -337,6 +368,37 @@ bool Laser::ApplyLaserFaults() {
     }
   }
   return false;
+}
+
+void Laser::PublishScan(const Timekeeper& timekeeper, bool enqueue) {
+  auto& reg = FaultInjectionRegistry::Get();
+  const ros::Time now = timekeeper.GetSimTime();
+
+  if (enqueue) {
+    double delay = 0.0;
+    FaultEffect lat = reg.GetEffect(fault_key_, FaultKind::kLatency);
+    if (lat.active) {
+      delay = lat.severity * lat.Param("latency");
+    }
+    // Original header.stamp (capture time) is preserved; only delivery slips.
+    latency_queue_.emplace_back(now + ros::Duration(delay), laser_scan_);
+  }
+
+  // Bound the queue: a very large latency can't grow it without limit. Flush
+  // the oldest entries immediately if the cap is exceeded.
+  while (latency_queue_.size() > kMaxLatencyQueue) {
+    scan_publisher_.publish(latency_queue_.front().second);
+    publications_++;
+    latency_queue_.pop_front();
+  }
+
+  // Release every buffered scan whose sim-time release has arrived, in FIFO
+  // order. With no latency fault delay == 0 so the scan releases this step.
+  while (!latency_queue_.empty() && latency_queue_.front().first <= now) {
+    scan_publisher_.publish(latency_queue_.front().second);
+    publications_++;
+    latency_queue_.pop_front();
+  }
 }
 
 float LaserCallback::ReportFixture(b2Fixture* fixture, const b2Vec2& point,

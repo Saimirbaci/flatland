@@ -47,11 +47,14 @@
 #include <flatland_msgs/Collision.h>
 #include <flatland_msgs/Collisions.h>
 #include <flatland_plugins/bumper.h>
+#include <flatland_plugins/fault_injection_registry.h>
 #include <flatland_server/exceptions.h>
+#include <flatland_server/random.h>
 #include <flatland_server/timekeeper.h>
 #include <flatland_server/yaml_reader.h>
 #include <pluginlib/class_list_macros.h>
 #include <boost/algorithm/string/join.hpp>
+#include <cmath>
 
 using namespace flatland_server;
 
@@ -97,6 +100,13 @@ void Bumper::OnInitialize(const YAML::Node &config) {
   collisions_publisher_ =
       nh_.advertise<flatland_msgs::Collisions>(topic_name_, 1);
 
+  // Stable key the FaultInjectionRegistry uses to address this sensor, plus a
+  // deterministic RNG (seeded from the run authority) for the ghost/dropout
+  // faults so they reproduce for a given run seed.
+  fault_key_ = ComponentKey(GetModel()->GetName(), GetName());
+  rng_ = flatland_server::RngManager::Get().DeriveEngine(GetModel()->GetName() +
+                                                         "/" + GetName());
+
   ROS_DEBUG_NAMED("Bumper",
                   "Initialized with params: topic(%s) world_frame_id(%s) "
                   "publish_all_collisions(%d) update_rate(%f) exclude({%s})",
@@ -123,6 +133,8 @@ void Bumper::AfterPhysicsStep(const Timekeeper &timekeeper) {
   // empty and non-empty collisions when publish_all_collisions_ is false
   if (!publish_all_collisions_ || contact_states_.size() <= 0) {
     if (!update_timer_.CheckUpdate(timekeeper)) {
+      // Still release any matured buffered messages held by the latency fault.
+      DrainLatencyQueue(timekeeper);
       return;
     }
   }
@@ -182,7 +194,99 @@ void Bumper::AfterPhysicsStep(const Timekeeper &timekeeper) {
     collisions.collisions.push_back(collision);
   }
 
-  collisions_publisher_.publish(collisions);
+  // --- Fault perturbations on the in-band Collisions message only. No active
+  // effect -> the message and publish cadence are byte-for-byte unchanged. The
+  // label is never written into the message; ghost contacts are fabricated as
+  // message fields only and never touch Box2D state. ---
+  auto &reg = FaultInjectionRegistry::Get();
+
+  // Stuck/freeze: republish the last (perturbed) collisions list.
+  FaultEffect stuck = reg.GetEffect(fault_key_, FaultKind::kStuck);
+  if (stuck.active && last_collisions_valid_) {
+    collisions.collisions = last_collisions_.collisions;
+  }
+
+  // Ghost contact: with probability severity*ghost_prob, append a phantom
+  // collision so a spurious contact appears in-band.
+  FaultEffect ghost = reg.GetEffect(fault_key_, FaultKind::kGhostReturn);
+  if (ghost.active) {
+    double p = ghost.severity * ghost.Param("ghost_prob");
+    std::uniform_real_distribution<double> u(0.0, 1.0);
+    if (u(rng_) < p) {
+      flatland_msgs::Collision phantom;
+      phantom.entity_A = GetModel()->GetName();
+      phantom.body_A = GetModel()->GetName();
+      phantom.entity_B = "phantom";
+      phantom.body_B = "phantom";
+
+      std::uniform_real_distribution<double> coord(-1.0, 1.0);
+      std::normal_distribution<double> force_gen(0.0, 1.0);
+      flatland_msgs::Vector2 point;
+      point.x = coord(rng_);
+      point.y = coord(rng_);
+      flatland_msgs::Vector2 normal;
+      normal.x = coord(rng_);
+      normal.y = coord(rng_);
+      phantom.contact_positions.push_back(point);
+      phantom.contact_normals.push_back(normal);
+      phantom.magnitude_forces.push_back(std::fabs(force_gen(rng_)) *
+                                         ghost.severity *
+                                         ghost.Param("ghost_force", 1.0));
+      collisions.collisions.push_back(phantom);
+    }
+  }
+
+  // Cache the (possibly perturbed) message so the freeze fault pins to it.
+  last_collisions_ = collisions;
+  last_collisions_valid_ = true;
+
+  // Dropout: probabilistically skip publishing this message.
+  bool skip = false;
+  FaultEffect drop = reg.GetEffect(fault_key_, FaultKind::kDropout);
+  if (drop.active) {
+    double p = drop.severity * drop.Param("dropout_prob", 1.0);
+    std::uniform_real_distribution<double> u(0.0, 1.0);
+    if (u(rng_) < p) skip = true;
+  }
+
+  // Latency-aware publish: when skip (dropout) we still drain matured buffered
+  // messages but do not enqueue the current one.
+  PublishCollisions(timekeeper, collisions, !skip);
+}
+
+void Bumper::PublishCollisions(const Timekeeper &timekeeper,
+                               const flatland_msgs::Collisions &collisions,
+                               bool enqueue) {
+  auto &reg = FaultInjectionRegistry::Get();
+  const ros::Time now = timekeeper.GetSimTime();
+
+  if (enqueue) {
+    double delay = 0.0;
+    FaultEffect lat = reg.GetEffect(fault_key_, FaultKind::kLatency);
+    if (lat.active) {
+      delay = lat.severity * lat.Param("latency");
+    }
+    // Original header.stamp (capture time) is preserved; only delivery slips.
+    latency_queue_.emplace_back(now + ros::Duration(delay), collisions);
+  }
+
+  // Bound the queue so a large latency can't grow it without limit.
+  while (latency_queue_.size() > kMaxLatencyQueue) {
+    collisions_publisher_.publish(latency_queue_.front().second);
+    latency_queue_.pop_front();
+  }
+
+  DrainLatencyQueue(timekeeper);
+}
+
+void Bumper::DrainLatencyQueue(const Timekeeper &timekeeper) {
+  const ros::Time now = timekeeper.GetSimTime();
+  // Release every buffered message whose sim-time release has arrived, FIFO.
+  // With no latency fault delay == 0 so messages release the same step.
+  while (!latency_queue_.empty() && latency_queue_.front().first <= now) {
+    collisions_publisher_.publish(latency_queue_.front().second);
+    latency_queue_.pop_front();
+  }
 }
 
 void Bumper::BeginContact(b2Contact *contact) {

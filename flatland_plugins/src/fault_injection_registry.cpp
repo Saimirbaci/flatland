@@ -164,6 +164,8 @@ FaultKind ParseFaultKind(const std::string &type) {
   if (type == "stuck" || type == "frozen") return FaultKind::kStuck;
   if (type == "quantization") return FaultKind::kQuantization;
   if (type == "laser_sector_occlusion") return FaultKind::kLaserSectorOcclusion;
+  if (type == "latency") return FaultKind::kLatency;
+  if (type == "ghost_return") return FaultKind::kGhostReturn;
   if (type == "torque_loss") return FaultKind::kTorqueLoss;
   if (type == "wheel_slip") return FaultKind::kWheelSlip;
   if (type == "asymmetric_drive") return FaultKind::kAsymmetricDrive;

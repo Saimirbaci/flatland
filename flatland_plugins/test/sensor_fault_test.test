@@ -1,0 +1,13 @@
+<!--
+Test launchfile for sensor_fault_test
+
+Runs rosmaster so the FaultInjector can advertise the reserved ground-truth
+topic and the laser/gps/bumper plugins can publish their in-band topics, which
+the test subscribes to and asserts over. use_sim_time keeps the latency
+assertions on the simulation clock rather than wall time.
+-->
+<launch>
+  <param name="use_sim_time" value="true"/>
+  <test pkg="flatland_plugins" type="sensor_fault_test"
+        test-name="sensor_fault_test" time-limit="180.0"/>
+</launch>

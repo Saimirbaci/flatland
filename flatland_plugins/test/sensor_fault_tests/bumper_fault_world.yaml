@@ -1,0 +1,65 @@
+# Bumper sensor-fault world. The robot touches nothing, so a clean run only
+# publishes empty Collisions; the FaultInjector perturbs that stream in-band:
+#   ghost_return [1,2]s : a phantom collision is appended (message fields only)
+#   dropout      [3,4]s : collisions messages are dropped
+#   latency      [5,..)s: collisions delivery is delayed by 0.4 s (stamp lags)
+#   stuck/freeze [1,2]s : (exercised alongside ghost) republishes the last msg
+# Ground truth goes ONLY to the sealed sidecar + reserved topic.
+properties: {}
+layers:
+  - name: "2d"
+    map: "map.yaml"
+    color: [0, 1, 0, 1]
+models:
+  - name: robot
+    pose: [0, 0, 0]
+    model: "bumper_fault_robot.model.yaml"
+
+plugins:
+  - type: FaultInjector
+    name: faults
+    ground_truth_topic: "/_ground_truth/faults"
+    ground_truth_path: "/tmp/flatland_bumper_fault_ground_truth.json"
+    faults:
+      - id: bumper_ghost_1
+        type: ghost_return
+        target: { model: robot, component: bumper, topic: collisions }
+        trigger: { kind: time }
+        severity:
+          onset_time: 1.0
+          ramp_up: 0.0
+          hold: 1.0
+          ramp_down: 0.0
+          peak: 1.0
+          profile: step
+        params:
+          ghost_prob: 1.0
+          ghost_force: 5.0
+
+      - id: bumper_dropout_1
+        type: dropout
+        target: { model: robot, component: bumper, topic: collisions }
+        trigger: { kind: time }
+        severity:
+          onset_time: 3.0
+          ramp_up: 0.0
+          hold: 1.0
+          ramp_down: 0.0
+          peak: 1.0
+          profile: step
+        params:
+          dropout_prob: 1.0
+
+      - id: bumper_latency_1
+        type: latency
+        target: { model: robot, component: bumper, topic: collisions }
+        trigger: { kind: time }
+        severity:
+          onset_time: 5.0
+          ramp_up: 0.0
+          hold: -1
+          ramp_down: 0.0
+          peak: 1.0
+          profile: step
+        params:
+          latency: 0.4

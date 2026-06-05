@@ -1,0 +1,33 @@
+# Robot carrying a GPS and a DiffDrive, used by the GPS sensor-fault rostest.
+# The test keeps it stationary while it asserts position noise, then drives it
+# forward so the freeze fault is observable (a moving robot whose published fix
+# stops changing). The model knows nothing about faults.
+bodies:
+  - name: base
+    type: dynamic
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 100
+        layers: ["2d"]
+        points: [[-0.25, -0.25],
+                 [ 0.25, -0.25],
+                 [ 0.25,  0.25],
+                 [-0.25,  0.25]]
+
+plugins:
+  - type: DiffDrive
+    name: diff_drive
+    body: base
+    odom_frame_id: odom
+    pub_rate: 100
+
+  - type: Gps
+    name: gps
+    body: base
+    topic: gps/fix
+    frame: gps
+    broadcast_tf: true
+    update_rate: 50
+    ref_lat: 43.6
+    ref_lon: -79.6

@@ -1,0 +1,29 @@
+# Stationary robot carrying a single Laser, used by the laser sensor-fault
+# rostest. The base is static so the scan geometry never changes between steps,
+# which lets the test assert the exact additive range bias and isolate ghost
+# returns / latency from real motion. The model knows nothing about faults.
+bodies:
+  - name: base
+    type: static
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 1
+        layers: ["2d"]
+        points: [[-0.15, -0.15],
+                 [ 0.15, -0.15],
+                 [ 0.15,  0.15],
+                 [-0.15,  0.15]]
+
+plugins:
+  - type: Laser
+    name: laser_front
+    body: base
+    topic: scan
+    frame: laser_front
+    broadcast_tf: true
+    update_rate: 50
+    always_publish: true
+    range: 20
+    noise_std_dev: 0.0
+    angle: {min: -1.5707, max: 1.5707, increment: 0.05}
