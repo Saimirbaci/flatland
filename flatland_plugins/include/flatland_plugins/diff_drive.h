@@ -135,10 +135,12 @@ class DiffDrive : public flatland_server::ModelPlugin {
    *                longitudinal/lateral slip between the commanded (limited)
    *                twist and the actual contact-patch velocity, then applies the
    *                anisotropic Coulomb friction force from wheel_friction_.
-   * @param[in]     b2body The model body to drive
-   * @param[in]     dt     The physics timestep [s]
+   * @param[in]     b2body       The model body to drive
+   * @param[in]     dt           The physics timestep [s]
+   * @param[in]     effort_scale Transient multiplier on the motor force cap
+   *                             (1.0 = unchanged; motor_degradation shrinks it)
    */
-  void ApplyFrictionDrive(b2Body* b2body, double dt);
+  void ApplyFrictionDrive(b2Body* b2body, double dt, double effort_scale = 1.0);
   /**
    * @name        TwistCallback
    * @brief       callback to apply twist (velocity and omega)

@@ -148,6 +148,27 @@ Drivetrain faults are applied **after** the existing actuator/dynamics ramp and
 **before** `SetLinearVelocity`/friction drive, and are clamped, so the resulting
 `odom`/`tf`/motion reflect the fault through Box2D rather than a cosmetic edit.
 
+#### Actuator-stage drivetrain faults
+
+These four perturb the drivetrain by modulating the shared **actuator-dynamics
+model** (`ActuatorDynamics`: the effort/force-torque cap and the command-latency
+delay line) rather than post-multiplying the commanded velocity. They are still
+fully **causal** — the true Box2D motion *and* the resulting `odom`/`tf` reflect
+them — and ground truth is sealed out-of-band exactly as for the drivetrain
+faults above. With no active effect the actuator pipeline is byte-for-byte the
+clean-run pipeline.
+
+| type | applies to | `params` | effect (acts through the actuator model) |
+|------|-----------|----------|------|
+| `motor_degradation` | diff_drive, tricycle_drive | `degrade` (0..1, default 1) | scales the actuator effort cap by `1 − severity·degrade`, lowering the achievable acceleration (`a_max = F/m`) and, in friction mode, the per-wheel motor force. **Requires** a configured `max_force`/`max_torque` to have any effect (it shrinks an existing cap). |
+| `asymmetric_wheel_speed` | diff_drive | `imbalance` (0..1, default 1), `side` (`<0.5` = left/+y, else right/−y) | decomposes the commanded twist into per-wheel speeds via `wheel_separation`, scales one side by `1 − severity·imbalance`, and recomposes → a coupled linear drop **and** yaw drift (distinct from `asymmetric_drive`'s pure additive yaw bias). With no `wheel_separation` it falls back to an equivalent linear-drop + yaw-bias approximation. |
+| `locked_wheel` | diff_drive | `side` (`<0.5` = left, else right) | scales one wheel's speed to `1 − severity` (≈0 at full severity) → a pivot; distinct from `stuck_wheel`, which drops *both* wheels. Same per-wheel recompose / fallback as `asymmetric_wheel_speed`. |
+| `controller_latency` | diff_drive, tricycle_drive | `latency` (s) | adds `severity·latency` of transport deadtime to the actuator command-latency delay line for the duration of the fault, so the drive response to a `cmd_vel` step is delayed (on top of any configured `command_latency`). |
+
+`asymmetric_wheel_speed` and `locked_wheel` are **diff_drive-only**: a tricycle
+has a single front drive wheel, so a per-rear-wheel speed imbalance is not
+physically meaningful there.
+
 ### Localization / odometry faults
 
 These are the **localization-failure class**: the perturbation that motivates an

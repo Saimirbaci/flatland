@@ -171,6 +171,10 @@ if(CATKIN_ENABLE_TESTING)
                     test/localization_fault_test.cpp)
   target_link_libraries(localization_fault_test flatland_plugins_lib)
 
+  add_rostest_gtest(actuator_fault_test test/actuator_fault_test.test
+                    test/actuator_fault_test.cpp)
+  target_link_libraries(actuator_fault_test flatland_plugins_lib)
+
   # ActuatorDynamics is a utility class (not a pluginlib plugin), so it needs no
   # entry in flatland_plugins.xml; only a gtest unit target is added here.
   catkin_add_gtest(actuator_dynamics_test test/actuator_dynamics_test.cpp)

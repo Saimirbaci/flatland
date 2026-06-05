@@ -133,6 +133,14 @@ TEST(ParseTest, FaultKindAndProfile) {
   EXPECT_EQ(ParseFaultKind("encoder_drift"), FaultKind::kEncoderDrift);
   EXPECT_EQ(ParseFaultKind("odom_slip"), FaultKind::kOdomSlip);
   EXPECT_EQ(ParseFaultKind("amcl_divergence"), FaultKind::kAmclDivergence);
+  // Actuator-stage drivetrain faults.
+  EXPECT_EQ(ParseFaultKind("motor_degradation"),
+            FaultKind::kMotorDegradation);
+  EXPECT_EQ(ParseFaultKind("asymmetric_wheel_speed"),
+            FaultKind::kAsymmetricWheelSpeed);
+  EXPECT_EQ(ParseFaultKind("locked_wheel"), FaultKind::kLockedWheel);
+  EXPECT_EQ(ParseFaultKind("controller_latency"),
+            FaultKind::kControllerLatency);
   EXPECT_EQ(ParseFaultKind("not_a_fault"), FaultKind::kUnknown);
   EXPECT_EQ(ParseFaultKind("garbage"), FaultKind::kUnknown);
 

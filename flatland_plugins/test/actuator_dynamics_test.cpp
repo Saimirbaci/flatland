@@ -245,6 +245,124 @@ TEST(ActuatorDynamicsTest, empty_configure_is_noop) {
   EXPECT_NEAR(0.0, a.ForceCap(), 1e-9);
 }
 
+// --- Effort-scale overload (motor_degradation) ----------------------------
+// effort_scale shrinks the effort cap: scale 1.0 reproduces the unscaled value,
+// scale 0.5 halves the cap, scale 0.0 disables drive entirely.
+TEST(ActuatorDynamicsTest, acceleration_cap_effort_scale) {
+  ActuatorDynamics a;
+  YAML::Node config;
+  config["max_force"] = 25.0;
+  a.Configure(config);
+
+  // scale 1.0 == the legacy single-arg behaviour (25 N / 25 kg = 1.0).
+  EXPECT_NEAR(1.0, a.AccelerationCap(25.0, 1.0), 1e-9);
+  EXPECT_NEAR(a.AccelerationCap(25.0), a.AccelerationCap(25.0, 1.0), 1e-9);
+  // scale 0.5 halves the achievable acceleration.
+  EXPECT_NEAR(0.5, a.AccelerationCap(25.0, 0.5), 1e-9);
+  // scale 0.0 on a CONFIGURED limit -> a dead motor: cap clamps accel to 0
+  // (NOT the +inf "no limit configured" sentinel).
+  EXPECT_NEAR(0.0, a.AccelerationCap(25.0, 0.0), 1e-9);
+}
+
+// The friction-path ForceCap scales the same way; scale 1.0 is unchanged.
+TEST(ActuatorDynamicsTest, force_cap_effort_scale) {
+  ActuatorDynamics a;
+  YAML::Node config;
+  config["max_force"] = 30.0;
+  a.Configure(config);
+
+  EXPECT_NEAR(30.0, a.ForceCap(), 1e-9);
+  EXPECT_NEAR(30.0, a.ForceCap(1.0), 1e-9);
+  EXPECT_NEAR(15.0, a.ForceCap(0.5), 1e-9);
+  EXPECT_NEAR(0.0, a.ForceCap(0.0), 1e-9);
+}
+
+// An actuator with no effort limit cannot be degraded (nothing to shrink).
+TEST(ActuatorDynamicsTest, effort_scale_noop_when_no_effort_limit) {
+  ActuatorDynamics a;  // max_effort_ == 0
+  EXPECT_TRUE(std::isinf(a.AccelerationCap(25.0, 0.5)));
+  EXPECT_NEAR(0.0, a.ForceCap(0.5), 1e-9);
+}
+
+// --- Extra-latency Pull (controller_latency) ------------------------------
+// extra_latency == 0 reproduces the byte-for-byte pass-through (no delay).
+TEST(ActuatorDynamicsTest, extra_latency_zero_is_passthrough) {
+  ActuatorDynamics a;  // command_latency_ == 0
+  ros::Time t(0.0);
+  a.Push(1.0, t);
+  EXPECT_NEAR(1.0, a.Pull(t, 0.0), 1e-9);
+  t = ros::Time(0.1);
+  a.Push(2.0, t);
+  EXPECT_NEAR(2.0, a.Pull(t, 0.0), 1e-9);
+}
+
+// A pure extra_latency (no configured command_latency) delays the command by
+// exactly that amount: pushed at t, emerges at t + extra.
+TEST(ActuatorDynamicsTest, extra_latency_delays_with_no_base_latency) {
+  ActuatorDynamics a;  // command_latency_ == 0
+  const double dt = 0.1;
+  const double extra = 0.5;  // 5-step delay
+  for (int i = 0; i < 20; i++) {
+    ros::Time t(i * dt);
+    double value = (i + 1) * 10.0;
+    a.Push(value, t);
+    double out = a.Pull(t, extra);
+    if (i < 5) {
+      EXPECT_NEAR(0.0, out, 1e-6) << "step " << i;
+    } else {
+      EXPECT_NEAR((i - 4) * 10.0, out, 1e-6) << "step " << i;
+    }
+  }
+}
+
+// extra_latency stacks on top of the configured command_latency: total delay is
+// base + extra. base 0.2 + extra 0.3 = 0.5 s = 5 steps at dt = 0.1.
+TEST(ActuatorDynamicsTest, extra_latency_adds_to_base_latency) {
+  ActuatorDynamics a;
+  YAML::Node config;
+  config["command_latency"] = 0.2;
+  a.Configure(config);
+
+  const double dt = 0.1;
+  const double extra = 0.3;
+  for (int i = 0; i < 20; i++) {
+    ros::Time t(i * dt);
+    double value = (i + 1) * 10.0;
+    a.Push(value, t);
+    double out = a.Pull(t, extra);
+    if (i < 5) {
+      EXPECT_NEAR(0.0, out, 1e-6) << "step " << i;
+    } else {
+      EXPECT_NEAR((i - 4) * 10.0, out, 1e-6) << "step " << i;
+    }
+  }
+}
+
+// The buffer scan is non-destructive, so latency may INCREASE mid-run without
+// having discarded an older command it now needs. Push a distinct command every
+// step; first read with a small latency, then read a later step with a larger
+// latency and confirm it correctly reaches the older command.
+TEST(ActuatorDynamicsTest, increasing_latency_reaches_older_command) {
+  ActuatorDynamics a;
+  YAML::Node config;
+  config["command_latency"] = 0.1;  // base 1-step delay at dt = 0.1
+  a.Configure(config);
+
+  const double dt = 0.1;
+  // Push commands for 0..9 with value == step index * 10.
+  for (int i = 0; i < 10; i++) {
+    a.Push(i * 10.0, ros::Time(i * dt));
+  }
+
+  // At t = 0.9 with the base latency (0.1) the active command is step 8 (= 80).
+  EXPECT_NEAR(80.0, a.Pull(ros::Time(9 * dt), 0.0), 1e-6);
+  // At the same time with a larger total latency (0.1 + 0.4 = 0.5) the active
+  // command is the OLDER step 4 (= 40); a destructive drain would have lost it.
+  EXPECT_NEAR(40.0, a.Pull(ros::Time(9 * dt), 0.4), 1e-6);
+  // And the small-latency read still works afterwards (non-destructive).
+  EXPECT_NEAR(80.0, a.Pull(ros::Time(9 * dt), 0.0), 1e-6);
+}
+
 int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

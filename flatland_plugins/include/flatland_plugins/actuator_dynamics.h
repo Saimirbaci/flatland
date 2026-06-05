@@ -151,29 +151,49 @@ class ActuatorDynamics {
    * @name          Pull
    * @brief         Return the command delayed by command_latency seconds
    * @details       Zero-order hold: returns the value of the most recent
-   *                command whose stamp is <= now - command_latency. With
-   *                latency disabled this is a pass-through (latest command).
-   * @param[in]     now The current Timekeeper sim time
+   *                command whose stamp is <= now - (command_latency +
+   *                extra_latency). With both latencies disabled this is a
+   *                pass-through (latest command).
+   *
+   *                extra_latency lets a fault (controller_latency) add transport
+   *                deadtime on top of the configured command_latency_ for the
+   *                current step only. Because the total latency can vary step to
+   *                step, the buffer is scanned NON-destructively (entries are
+   *                only dropped by the Push-time kMaxBufferSize bound), so a
+   *                larger latency on a later step can still reach an older
+   *                command and extra_latency == 0 reproduces the byte-for-byte
+   *                identical pass-through / delay behaviour.
+   * @param[in]     now           The current Timekeeper sim time
+   * @param[in]     extra_latency Additional transport deadtime [s] for this step
+   *                              (default 0 = no extra delay)
    * @return        The latency-delayed command (0 until the first one arrives)
    */
-  double Pull(const ros::Time &now);
+  double Pull(const ros::Time &now, double extra_latency = 0.0);
 
   /**
    * @name          AccelerationCap
    * @brief         Convert the effort limit into a per-step acceleration cap
    * @param[in]     inertia Body mass [kg] (linear) or rotational inertia
    *                [kg*m^2] (angular), re-read from the Box2D body each step
-   * @return        max_effort / inertia, or +infinity when disabled (effort 0)
-   *                or inertia is non-positive (detached unit setups)
+   * @param[in]     effort_scale Transient multiplier on the effort limit (1.0 =
+   *                unchanged); a fault (motor_degradation) shrinks it below 1 to
+   *                lower the achievable acceleration
+   * @return        (max_effort * effort_scale) / inertia, or +infinity when
+   *                disabled (effort 0) or inertia is non-positive (detached
+   *                unit setups)
    */
-  double AccelerationCap(double inertia) const;
+  double AccelerationCap(double inertia, double effort_scale = 1.0) const;
 
   /**
    * @name          ForceCap
    * @brief         The raw effort limit for the friction (per-wheel) path
-   * @return        max_effort_ [N] or [N*m] (0 = disabled / no cap)
+   * @param[in]     effort_scale Transient multiplier on the effort limit (1.0 =
+   *                unchanged); motor_degradation shrinks it below 1
+   * @return        max_effort_ * effort_scale [N] or [N*m] (0 = disabled)
    */
-  double ForceCap() const { return max_effort_; }
+  double ForceCap(double effort_scale = 1.0) const {
+    return max_effort_ * effort_scale;
+  }
 
  private:
   /// Sim-time FIFO of (stamp, command) pairs in the latency delay line.
