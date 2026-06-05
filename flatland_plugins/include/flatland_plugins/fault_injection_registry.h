@@ -95,7 +95,26 @@ enum class FaultKind {
   kEncoderDrift,
   kOdomSlip,
   kAmclDivergence,
+  // Environment / dynamic-world faults. Unlike every kind above, these do NOT
+  // perturb a published message or the registry effect snapshot; the
+  // FaultInjector mutates the running world directly (spawns/moves a kinematic
+  // obstacle, relocates furniture, activates a low-friction spill region) so
+  // the perturbation is observable only through the robot's normal sensors. The
+  // ground-truth label stays sealed out-of-band exactly as for the other kinds.
+  // See doc/fault_injection.md.
+  kDynamicObstacle,  ///< spawn a moving obstacle (person/cart) along a path
+  kMovedFurniture,   ///< relocate (or spawn) a static obstacle mid-run
+  kSpill,            ///< activate a circular low-friction patch mid-run
 };
+
+/**
+ * @brief True for the environment / dynamic-world fault kinds, which mutate the
+ * world directly rather than writing the effect registry.
+ */
+inline bool IsEnvironmentKind(FaultKind kind) {
+  return kind == FaultKind::kDynamicObstacle ||
+         kind == FaultKind::kMovedFurniture || kind == FaultKind::kSpill;
+}
 
 /**
  * @brief Shape of the severity ramp from onset to peak (and back).

@@ -1,0 +1,33 @@
+# Stationary robot carrying a forward-facing Laser, used by the
+# environment-fault rostest (dynamic_obstacle / moved_furniture). The base is
+# static so the scan geometry only changes when an obstacle enters the field of
+# view, isolating the environment perturbation from any robot motion. The model
+# knows nothing about faults.
+bodies:
+  - name: base
+    type: static
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 1
+        layers: ["2d"]
+        points: [[-0.15, -0.15],
+                 [ 0.15, -0.15],
+                 [ 0.15,  0.15],
+                 [-0.15,  0.15]]
+
+plugins:
+  - type: Laser
+    name: laser_front
+    body: base
+    topic: scan
+    frame: laser_front
+    broadcast_tf: true
+    update_rate: 50
+    always_publish: true
+    range: 20
+    noise_std_dev: 0.0
+    layers: ["2d"]
+    # Forward semicircle (0 rad = +x). An obstacle in front (x > 0) is seen; an
+    # object behind the robot (x < 0) is outside the field of view.
+    angle: {min: -1.5707, max: 1.5707, increment: 0.02}

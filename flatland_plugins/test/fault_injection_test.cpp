@@ -143,8 +143,19 @@ TEST(ParseTest, FaultKindAndProfile) {
   EXPECT_EQ(ParseFaultKind("locked_wheel"), FaultKind::kLockedWheel);
   EXPECT_EQ(ParseFaultKind("controller_latency"),
             FaultKind::kControllerLatency);
+  // Environment / dynamic-world faults.
+  EXPECT_EQ(ParseFaultKind("dynamic_obstacle"), FaultKind::kDynamicObstacle);
+  EXPECT_EQ(ParseFaultKind("moved_furniture"), FaultKind::kMovedFurniture);
+  EXPECT_EQ(ParseFaultKind("spill"), FaultKind::kSpill);
   EXPECT_EQ(ParseFaultKind("not_a_fault"), FaultKind::kUnknown);
   EXPECT_EQ(ParseFaultKind("garbage"), FaultKind::kUnknown);
+
+  // Only the environment kinds are flagged as world-mutating.
+  EXPECT_TRUE(IsEnvironmentKind(FaultKind::kDynamicObstacle));
+  EXPECT_TRUE(IsEnvironmentKind(FaultKind::kMovedFurniture));
+  EXPECT_TRUE(IsEnvironmentKind(FaultKind::kSpill));
+  EXPECT_FALSE(IsEnvironmentKind(FaultKind::kSensorBias));
+  EXPECT_FALSE(IsEnvironmentKind(FaultKind::kTorqueLoss));
 
   EXPECT_EQ(ParseRampProfile("step"), RampProfile::kStep);
   EXPECT_EQ(ParseRampProfile("exp"), RampProfile::kExp);

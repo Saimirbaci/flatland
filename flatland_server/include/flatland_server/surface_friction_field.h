@@ -109,8 +109,13 @@ class SurfaceFrictionField {
   /**
    * @brief Whether the field carries any region data. A disabled field always
    *        returns 1.0.
+   *
+   * Becomes true once a runtime spill overlay is activated, even if the static
+   * raster is empty, so a clean world that injects a spill mid-run starts
+   * altering traction. With no static raster and no spills it stays false and
+   * GetFrictionFactor returns 1.0 everywhere (clean-run invariant).
    */
-  bool Enabled() const { return enabled_; }
+  bool Enabled() const { return enabled_ || !spills_.empty(); }
 
   /**
    * @brief Sample the friction multiplier at a world point.
@@ -119,6 +124,31 @@ class SurfaceFrictionField {
    *         disabled or the point lies outside the raster extent.
    */
   double GetFrictionFactor(const b2Vec2& world_point) const;
+
+  /**
+   * @brief Add or update a circular low-friction spill overlay, keyed by id.
+   *
+   * A runtime overlay that the static raster knows nothing about: it models a
+   * spill that appears mid-run. Inside a flat core the returned multiplier is
+   * @p mu; from the core out to @p radius it feathers (C0) back to 1.0 so the
+   * traction solver never sees a step change at the edge (mirroring the
+   * raster's bilinear smoothing). Calling again with the same @p id replaces
+   * the region, so the FaultInjector can ramp @p mu with severity each step.
+   *
+   * @param[in] id Stable region id (e.g. the fault id); reused id updates it
+   * @param[in] center Spill centre in world coordinates [m]
+   * @param[in] radius Spill outer radius [m] (> 0); no effect beyond it
+   * @param[in] mu Slipperiest multiplier at the core, clamped to >= min_factor
+   */
+  void AddCircularRegion(const std::string& id, const b2Vec2& center,
+                         double radius, double mu);
+
+  /**
+   * @brief Remove a circular spill overlay previously added with @p id. A
+   *        no-op if the id is absent. Once the last spill is removed and there
+   *        is no static raster, the field reports Enabled() == false again.
+   */
+  void RemoveCircularRegion(const std::string& id);
 
   /**
    * @brief Build a field from the optional world-YAML `surface_friction` block.
@@ -167,7 +197,23 @@ class SurfaceFrictionField {
       size_t max_points = 200000) const;
 
  private:
-  bool enabled_ = false;      ///< false -> GetFrictionFactor always returns 1.0
+  /// A runtime circular low-friction spill overlay (analytic, not rastered).
+  struct CircularRegion {
+    std::string id;  ///< stable key for update-in-place / removal
+    double cx = 0.0;     ///< centre world x [m]
+    double cy = 0.0;     ///< centre world y [m]
+    double radius = 0.0;  ///< outer radius [m]; no effect beyond it
+    double mu = 1.0;      ///< slipperiest multiplier at the core
+  };
+
+  /**
+   * @brief Sample the analytic spill overlays at a point, taking the minimum
+   *        multiplier over all active spills (1.0 if none affect the point).
+   */
+  double SampleSpills(const b2Vec2& world_point) const;
+
+  bool enabled_ = false;      ///< false -> static raster returns 1.0
+  std::vector<CircularRegion> spills_;  ///< active runtime spill overlays
   std::vector<double> grid_;  ///< row-major width_*height_ friction multipliers
   int width_ = 0;             ///< grid columns
   int height_ = 0;            ///< grid rows

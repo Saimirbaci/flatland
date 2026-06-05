@@ -244,6 +244,35 @@ class World : public b2ContactListener {
   }
 
   /**
+   * @brief Activate (or update) a circular low-friction spill region at run
+   * time.
+   *
+   * Hook used by the FaultInjector's `spill` environment fault to make a
+   * low-traction patch appear mid-run. Forwards to the surface-friction field's
+   * analytic overlay; the drive plugins already sample
+   * GetSurfaceFrictionFactor() per wheel, so the robot loses traction over the
+   * spill with zero change when none is active. Re-calling with the same @p id
+   * updates the region in place (so severity can ramp the multiplier).
+   *
+   * @param[in] id Stable spill id (e.g. the fault id)
+   * @param[in] center Spill centre in world coordinates [m]
+   * @param[in] radius Spill outer radius [m]
+   * @param[in] mu Slipperiest multiplier at the spill core
+   */
+  void AddSpillRegion(const std::string& id, const b2Vec2& center,
+                      double radius, double mu) {
+    surface_friction_.AddCircularRegion(id, center, radius, mu);
+  }
+
+  /**
+   * @brief Deactivate a spill region previously added with @p id (no-op if
+   *        absent). Called on the fault's end-edge so grip recovers.
+   */
+  void RemoveSpillRegion(const std::string& id) {
+    surface_friction_.RemoveCircularRegion(id);
+  }
+
+  /**
    * @brief Publish debug visualizations for everything
    * @param[in] update_layers since layers are pretty much static, this
    * parameter is used to skip updating layers

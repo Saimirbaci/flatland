@@ -50,6 +50,7 @@
 #include <Box2D/Box2D.h>
 #include <flatland_plugins/fault_injection_registry.h>
 #include <flatland_server/timekeeper.h>
+#include <flatland_server/types.h>
 #include <flatland_server/world_plugin.h>
 #include <ros/ros.h>
 
@@ -59,6 +60,7 @@
 
 namespace flatland_server {
 class Model;
+class YamlReader;
 }
 
 namespace flatland_plugins {
@@ -92,6 +94,19 @@ class FaultInjector : public flatland_server::WorldPlugin {
     std::map<std::string, double> params;  ///< fault-specific peak magnitudes
     std::string trigger_description;       ///< human-readable summary
 
+    // --- environment-fault config (environment kinds only) ---
+    std::string env_model_path;  ///< obstacle/furniture .model.yaml path
+    flatland_server::Pose env_spawn_pose;  ///< dynamic_obstacle spawn pose
+    flatland_server::Pose env_dest_pose;   ///< moved_furniture destination pose
+    std::vector<b2Vec2> env_waypoints;     ///< obstacle path waypoints [m]
+    double env_speed = 0.5;        ///< obstacle speed [m/s] at severity 1
+    bool env_despawn_on_end = false;   ///< remove the obstacle on fault end
+    bool env_spawn_if_absent = false;  ///< spawn furniture if target is absent
+    double env_spill_cx = 0.0;         ///< spill centre world x [m]
+    double env_spill_cy = 0.0;         ///< spill centre world y [m]
+    double env_spill_radius = 1.0;     ///< spill outer radius [m]
+    double env_spill_mu_min = 0.3;     ///< spill multiplier at peak severity
+
     // --- runtime state ---
     bool latched = false;        ///< condition has fired (onset resolved)
     double latched_onset = 0.0;  ///< sim-sec onset latched for condition faults
@@ -100,6 +115,12 @@ class FaultInjector : public flatland_server::WorldPlugin {
     double current_severity = 0.0;  ///< severity this step (for GT emission)
     double recorded_onset = -1.0;   ///< actual onset written to manifest
     double recorded_end = -1.0;     ///< actual end written to manifest
+
+    // --- environment-fault runtime state ---
+    bool env_applied = false;      ///< onset world-mutation applied (once)
+    bool env_ended = false;        ///< end-edge world-mutation applied (once)
+    std::string env_spawned_name;  ///< neutral name of the spawned obstacle
+    size_t env_waypoint_idx = 0;   ///< current target waypoint index
   };
 
   void OnInitialize(const YAML::Node &config) override;
@@ -123,6 +144,40 @@ class FaultInjector : public flatland_server::WorldPlugin {
   void UpdateModelMotion();
 
   /**
+   * @brief Parse the `params:` block for an environment fault (string/list
+   * fields the numeric-only path cannot handle: model path, waypoints, poses).
+   */
+  void ParseEnvironmentParams(Fault &fault,
+                              flatland_server::YamlReader &params_reader);
+
+  /**
+   * @brief Drive an environment fault's world mutation for this step.
+   *
+   * Spawns/moves on the active edge, ramps the spill multiplier and advances
+   * obstacle motion while active, and tears down on the end edge. Never writes
+   * the effect registry. Box2D/world calls are wrapped so a bad model path
+   * warns rather than crashing the physics loop.
+   */
+  void HandleEnvironmentFault(Fault &fault, double severity, bool active,
+                              const flatland_server::Timekeeper &timekeeper);
+
+  /**
+   * @brief Apply the one-shot onset mutation (spawn obstacle / move furniture).
+   */
+  void ApplyEnvironmentOnset(Fault &fault);
+
+  /**
+   * @brief Apply the one-shot end mutation (stop/despawn, clear spill).
+   */
+  void ApplyEnvironmentEnd(Fault &fault);
+
+  /**
+   * @brief Advance a live dynamic obstacle along its waypoints under sim time.
+   */
+  void UpdateDynamicObstacle(Fault &fault, double severity,
+                             const flatland_server::Timekeeper &timekeeper);
+
+  /**
    * @brief Publish the sealed ground-truth snapshot on the reserved topic.
    */
   void PublishGroundTruth(const ros::Time &stamp);
@@ -144,6 +199,8 @@ class FaultInjector : public flatland_server::WorldPlugin {
 
   std::map<std::string, b2Vec2> last_pos_;  ///< last position per model
   std::map<std::string, double> distance_;  ///< travelled distance per model
+
+  int env_spawn_counter_ = 0;  ///< monotonic suffix for neutral obstacle names
 };
 
 }  // namespace flatland_plugins
