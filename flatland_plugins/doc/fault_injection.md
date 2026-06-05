@@ -201,6 +201,40 @@ localization estimate diverge from the ground truth. (Contrast `torque_loss` /
 | `odom_slip` | diff_drive, tricycle_drive | `slip` | reported translation (odom delta + encoder twist) is scaled by `1 + severity·slip` (`>0` over-reports, `<0` under-reports) |
 | `amcl_divergence` | `LocalizationFault` component | `x`, `y`, `yaw` | localization estimate (`amcl_pose`) and the `map→odom` tf diverge from truth by the severity-scaled offset; odom is untouched |
 
+### Environment / dynamic-world faults
+
+These are the **environment class**: instead of perturbing a published message,
+the `FaultInjector` physically **mutates the running world** on the fault's
+onset/end transitions — spawning a moving obstacle, relocating furniture, or
+activating a low-friction spill region. The perturbation is therefore observable
+**only through the robot's normal sensors** (a near laser return, a bumper
+contact, traction loss in `odom`); there is no in-band annotation. Crucially
+these kinds are **not** written into the `FaultInjectionRegistry` effect snapshot
+(no sensor/drive plugin consumes them) — they act on `world_` directly. The
+ground-truth label is still sealed out-of-band exactly as for every other kind.
+
+Because the obstacle/spill *is* the signal, the only sealing requirement is that
+the injected models carry **neutral names** (`obstacle_1`, never
+`fault_person_injected`) so their normal `tf`/markers reveal nothing a
+hand-authored world obstacle would not. The `FaultInjector` appends a neutral
+numeric suffix to the configured `name` automatically.
+
+| type | `params` | effect (mutates the world) |
+|------|----------|------|
+| `dynamic_obstacle` | `model` (path to obstacle `.model.yaml`), `x0`,`y0`,`yaw0` (spawn pose), `waypoints` (list of `[x,y]`, optional), `speed` (m/s, scaled by severity), `despawn_on_end` (0/1) | spawns a kinematic obstacle at the spawn pose on onset and drives it along its waypoints via Box2D velocity (so it can block/nudge the robot); on the end-edge it stops, and is removed if `despawn_on_end` |
+| `moved_furniture` | `model` (path, used only if spawning), `to_x`,`to_y`,`to_yaw` (destination pose), `spawn_if_absent` (0/1) | relocates the `target.model` to the destination pose on onset; if absent and `spawn_if_absent`, spawns it there instead |
+| `spill` | `center_x`,`center_y` (m), `radius` (m), `mu_min` (slipperiest multiplier at peak severity) | activates a circular low-friction overlay on the world's surface-friction field on onset (severity scales the multiplier toward `mu_min`); removed on the end-edge so grip recovers |
+
+The `model` / `waypoints` params are strings/lists, so the environment kinds
+parse their `params:` block with a dedicated reader; the numeric params above are
+read through the same typed `YamlReader` path as every other fault.
+
+For `dynamic_obstacle` the `target.model` is the **spawned** obstacle's base
+name and `target.component` should be `environment`; for `spill` the
+`target.component` is `environment` and `target.model` is the robot/area label.
+The sealed manifest records `affected_component = environment` and a
+`affected_topic` of `""` (or `scan` to hint the dominant observable channel).
+
 **IMU bias** for a localization-failure scenario is **not a new type** — it is the
 existing `sensor_bias` / `sensor_drift` applied to the `imu` component. Those
 perturb the IMU orientation (yaw) and gyro (`wz`) channels (`sensor_drift`
@@ -258,6 +292,17 @@ See `record_rca_bag.launch` for the exclusion config and
   recorded by `record_rca_bag.launch`.
 * **Sealed (RCA must NOT consume):** the reserved `/_ground_truth/...` topic and
   the sidecar manifest file. Excluded from the bag; consumed only by the scorer.
+
+**Environment faults add no in-band label.** A spawned obstacle / relocated
+furniture / activated spill publishes only the *normal* model topics and Box2D
+markers a hand-authored world object would (the obstacle **is** the signal). The
+injected models carry neutral names (`obstacle_1`, …) and no fault-specific tf
+frame or marker namespace, so nothing in-band distinguishes them from a static
+world obstacle. The only fault metadata — type, onset, end, location, severity —
+still flows exclusively to the sealed manifest + reserved topic, with
+`affected_component = environment`. The exclude-by-prefix bag config records the
+obstacle/spill as ordinary in-band world state and drops only `/_ground_truth.*`,
+so no new topic or exclusion is required.
 
 ### RCA hypothesis format (scorer input)
 

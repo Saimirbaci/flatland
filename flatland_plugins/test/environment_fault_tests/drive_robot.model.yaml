@@ -1,0 +1,33 @@
+# Friction-mode diff-drive robot for the spill environment-fault test. A single
+# dynamic square body whose slip-limited traction is scaled by the world's
+# surface-friction field at each wheel contact point, so an injected spill
+# region drops its grip mid-run. The model knows nothing about faults.
+bodies:
+  - name: base
+    type: dynamic
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 100  # ~25 kg over the 0.5 x 0.5 m footprint, AGV-ish load
+        layers: ["2d"]
+        points: [[-0.25, -0.25],
+                 [ 0.25, -0.25],
+                 [ 0.25,  0.25],
+                 [-0.25,  0.25]]
+
+plugins:
+  - type: DiffDrive
+    name: diff_drive
+    body: base
+    odom_frame_id: map
+    pub_rate: 1000  # publish every step so the test can sample motion windows
+    enable_odom_tf_pub: false
+    drive_mode: friction
+    wheel_separation: 0.4
+    wheel_friction:
+      enabled: true
+      mu_long_static: 1.0
+      mu_long_kinetic: 0.8
+      mu_lat_static: 1.2
+      mu_lat_kinetic: 1.0
+      static_slip_threshold: 0.05

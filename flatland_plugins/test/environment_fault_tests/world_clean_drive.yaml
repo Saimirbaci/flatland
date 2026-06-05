@@ -1,0 +1,13 @@
+# Clean reference world for the spill test: the friction-mode diff-drive robot
+# on an empty plane with NO FaultInjector and NO surface_friction block, so grip
+# is nominal (1.0) everywhere. The spill run is compared against this to show
+# the injected patch — and only it — chokes the robot's traction.
+properties: {}
+layers:
+  - name: "2d"
+    map: "../surface_friction_tests/map.yaml"
+    color: [0, 1, 0, 1]
+models:
+  - name: robot
+    pose: [0, 0, 0]
+    model: "drive_robot.model.yaml"

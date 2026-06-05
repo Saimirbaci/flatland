@@ -1,0 +1,37 @@
+# spill environment fault: a circular low-friction patch is activated at the
+# origin-forward area from t=0 (step, indefinite). The friction-mode diff-drive
+# robot loses traction over the patch (its commanded forward motion is choked),
+# while a clean run (world_clean_drive.yaml) drives freely. Ground truth is
+# sealed out-of-band.
+properties: {}
+layers:
+  - name: "2d"
+    map: "../surface_friction_tests/map.yaml"
+    color: [0, 1, 0, 1]
+models:
+  - name: robot
+    pose: [0, 0, 0]
+    model: "drive_robot.model.yaml"
+
+plugins:
+  - type: FaultInjector
+    name: faults
+    ground_truth_topic: "/_ground_truth/faults"
+    ground_truth_path: "/tmp/flatland_env_spill_gt.json"
+    faults:
+      - id: spill_1
+        type: spill
+        target: { model: robot, component: environment, topic: "" }
+        trigger: { kind: time }
+        severity:
+          onset_time: 0.0
+          ramp_up: 0.0
+          hold: -1
+          ramp_down: 0.0
+          peak: 1.0
+          profile: step
+        params:
+          center_x: 0.5
+          center_y: 0.0
+          radius: 3.0
+          mu_min: 0.08

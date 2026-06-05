@@ -1,0 +1,17 @@
+# A neutral static obstacle (a piece of furniture) relocated mid-run by the
+# moved_furniture environment fault. It exists in the world from load time and
+# is moved into the robot's field of view on the fault onset. Plain body on the
+# shared "2d" layer, no plugins, neutral name -> indistinguishable in-band from
+# any other world obstacle (sealing invariant).
+bodies:
+  - name: base
+    type: static
+    color: [0.4, 0.3, 0.2, 1.0]
+    footprints:
+      - type: polygon
+        density: 1
+        layers: ["2d"]
+        points: [[-0.30, -0.30],
+                 [ 0.30, -0.30],
+                 [ 0.30,  0.30],
+                 [-0.30,  0.30]]

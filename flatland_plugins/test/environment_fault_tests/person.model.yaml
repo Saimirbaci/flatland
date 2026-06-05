@@ -1,0 +1,19 @@
+# A neutral dynamic obstacle (person/cart) spawned mid-run by the
+# dynamic_obstacle environment fault. Deliberately plain: a small dynamic body
+# on the shared "2d" layer so the robot's laser sees it and a bumper would
+# contact it. It carries NO plugins and no fault-specific tf/marker namespace,
+# so its in-band footprint is indistinguishable from a hand-authored world
+# obstacle (sealing invariant). The FaultInjector drives its motion via Box2D
+# velocity; the name is assigned a neutral numeric suffix at spawn time.
+bodies:
+  - name: base
+    type: dynamic
+    color: [0.6, 0.6, 0.6, 1.0]
+    footprints:
+      - type: polygon
+        density: 50
+        layers: ["2d"]
+        points: [[-0.20, -0.20],
+                 [ 0.20, -0.20],
+                 [ 0.20,  0.20],
+                 [-0.20,  0.20]]

@@ -1,0 +1,40 @@
+# moved_furniture environment fault: a piece of furniture exists from load time
+# BEHIND the laser robot (x = -5, outside the forward field of view), so the
+# clean scan shows no near return. At t=0.5 s the fault relocates it ~2 m in
+# FRONT of the robot, and the laser then shows a near return at ~2 m. Ground
+# truth is sealed out-of-band.
+properties: {}
+layers:
+  - name: "2d"
+    map: "../surface_friction_tests/map.yaml"
+    color: [0, 1, 0, 1]
+models:
+  - name: robot
+    pose: [0, 0, 0]
+    model: "laser_robot.model.yaml"
+  - name: furniture_1
+    pose: [-5, 0, 0]
+    model: "furniture.model.yaml"
+
+plugins:
+  - type: FaultInjector
+    name: faults
+    ground_truth_topic: "/_ground_truth/faults"
+    ground_truth_path: "/tmp/flatland_env_furniture_gt.json"
+    faults:
+      - id: furniture_move_1
+        type: moved_furniture
+        target: { model: furniture_1, component: environment, topic: scan }
+        trigger: { kind: time }
+        severity:
+          onset_time: 0.5
+          ramp_up: 0.0
+          hold: -1
+          ramp_down: 0.0
+          peak: 1.0
+          profile: step
+        params:
+          to_x: 2.0
+          to_y: 0.0
+          to_yaw: 0.0
+          spawn_if_absent: 0

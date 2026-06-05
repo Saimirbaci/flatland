@@ -99,47 +99,108 @@ double SurfaceFrictionField::CellClamped(int col, int row) const {
   return grid_[static_cast<size_t>(row) * width_ + col];
 }
 
+double SurfaceFrictionField::SampleSpills(const b2Vec2& world_point) const {
+  // No spill affects this point -> ambient multiplier.
+  double factor = 1.0;
+  for (const auto& s : spills_) {
+    if (s.radius <= 0.0) {
+      continue;
+    }
+    const double dx = world_point.x - s.cx;
+    const double dy = world_point.y - s.cy;
+    const double d = std::sqrt(dx * dx + dy * dy);
+    if (d >= s.radius) {
+      continue;  // outside the spill: no effect
+    }
+    // Flat low-friction core out to half the radius, then a C0 linear feather
+    // back to 1.0 at the edge, so a body entering the spill loses traction
+    // smoothly rather than through a force step (mirrors the raster's bilinear
+    // smoothing and avoids contact-solver chatter).
+    const double core = 0.5 * s.radius;
+    double region;
+    if (d <= core) {
+      region = s.mu;
+    } else {
+      const double t = (d - core) / (s.radius - core);  // 0 at core, 1 at edge
+      region = s.mu + t * (1.0 - s.mu);
+    }
+    factor = std::min(factor, region);
+  }
+  return factor;
+}
+
 double SurfaceFrictionField::GetFrictionFactor(
     const b2Vec2& world_point) const {
-  // A disabled field (no surface_friction block) never alters traction.
-  if (!enabled_) {
-    return 1.0;
+  // Start from the static raster sample (1.0 if there is no raster), then take
+  // the minimum against any active runtime spill overlay. A clean field with no
+  // raster and no spills returns exactly 1.0 (clean-run invariant).
+  double value = 1.0;
+
+  if (enabled_) {
+    const double x = world_point.x;
+    const double y = world_point.y;
+
+    // Points outside the raster extent are ambient: no wet/dry region there.
+    const double max_x = origin_x_ + width_ * resolution_;
+    const double max_y = origin_y_ + height_ * resolution_;
+    if (x >= origin_x_ && x <= max_x && y >= origin_y_ && y <= max_y) {
+      // Continuous pixel-centre coordinates. Columns increase with +x. Rows are
+      // stored top-down (row 0 = max y) to match the occupancy-map convention
+      // in layer.cpp, so +y maps to decreasing row.
+      const double cx = (x - origin_x_) / resolution_ - 0.5;
+      const double ry = (height_ - 0.5) - (y - origin_y_) / resolution_;
+
+      const int c0 = static_cast<int>(std::floor(cx));
+      const int r0 = static_cast<int>(std::floor(ry));
+      const double fx = cx - c0;
+      const double fy = ry - r0;
+
+      // Bilinear blend of the four surrounding cells (edge-clamped). This makes
+      // the sampled multiplier C0-continuous across cell and region boundaries,
+      // so the traction solver never sees a friction step change.
+      const double v00 = CellClamped(c0, r0);
+      const double v10 = CellClamped(c0 + 1, r0);
+      const double v01 = CellClamped(c0, r0 + 1);
+      const double v11 = CellClamped(c0 + 1, r0 + 1);
+
+      const double top = v00 + fx * (v10 - v00);
+      const double bottom = v01 + fx * (v11 - v01);
+      value = top + fy * (bottom - top);
+    }
   }
 
-  const double x = world_point.x;
-  const double y = world_point.y;
-
-  // Points outside the raster extent are ambient: no wet/dry region there.
-  const double max_x = origin_x_ + width_ * resolution_;
-  const double max_y = origin_y_ + height_ * resolution_;
-  if (x < origin_x_ || x > max_x || y < origin_y_ || y > max_y) {
-    return 1.0;
+  if (!spills_.empty()) {
+    value = std::min(value, SampleSpills(world_point));
   }
-
-  // Continuous pixel-centre coordinates. Columns increase with +x. Rows are
-  // stored top-down (row 0 = max y) to match the occupancy-map convention in
-  // layer.cpp, so +y maps to decreasing row.
-  const double cx = (x - origin_x_) / resolution_ - 0.5;
-  const double ry = (height_ - 0.5) - (y - origin_y_) / resolution_;
-
-  const int c0 = static_cast<int>(std::floor(cx));
-  const int r0 = static_cast<int>(std::floor(ry));
-  const double fx = cx - c0;
-  const double fy = ry - r0;
-
-  // Bilinear blend of the four surrounding cells (edge-clamped). This makes the
-  // sampled multiplier C0-continuous across cell and region boundaries, so the
-  // traction solver never sees a friction step change.
-  const double v00 = CellClamped(c0, r0);
-  const double v10 = CellClamped(c0 + 1, r0);
-  const double v01 = CellClamped(c0, r0 + 1);
-  const double v11 = CellClamped(c0 + 1, r0 + 1);
-
-  const double top = v00 + fx * (v10 - v00);
-  const double bottom = v01 + fx * (v11 - v01);
-  const double value = top + fy * (bottom - top);
 
   return std::max(min_factor_, value);
+}
+
+void SurfaceFrictionField::AddCircularRegion(const std::string& id,
+                                             const b2Vec2& center,
+                                             double radius, double mu) {
+  CircularRegion region;
+  region.id = id;
+  region.cx = center.x;
+  region.cy = center.y;
+  region.radius = radius;
+  region.mu = std::max(min_factor_, mu);
+
+  for (auto& s : spills_) {
+    if (s.id == id) {
+      s = region;  // update in place so severity can ramp the multiplier
+      return;
+    }
+  }
+  spills_.push_back(region);
+}
+
+void SurfaceFrictionField::RemoveCircularRegion(const std::string& id) {
+  spills_.erase(std::remove_if(spills_.begin(), spills_.end(),
+                               [&](const CircularRegion& s) {
+                                 return s.id == id;
+                               }),
+                spills_.end());
 }
 
 SurfaceFrictionField SurfaceFrictionField::FromConfig(

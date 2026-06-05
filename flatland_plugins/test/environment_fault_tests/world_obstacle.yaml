@@ -1,0 +1,38 @@
+# dynamic_obstacle environment fault: a neutral obstacle is spawned ~2 m in
+# front of the (static) laser robot at t=0.5 s. Before onset the scan is open
+# (no near return); after onset the laser shows a near return at ~2 m. The
+# ground-truth label is sealed out-of-band on the reserved topic + sidecar.
+properties: {}
+layers:
+  - name: "2d"
+    map: "../surface_friction_tests/map.yaml"
+    color: [0, 1, 0, 1]
+models:
+  - name: robot
+    pose: [0, 0, 0]
+    model: "laser_robot.model.yaml"
+
+plugins:
+  - type: FaultInjector
+    name: faults
+    ground_truth_topic: "/_ground_truth/faults"
+    ground_truth_path: "/tmp/flatland_env_obstacle_gt.json"
+    faults:
+      - id: obstacle_1
+        type: dynamic_obstacle
+        target: { model: obstacle, component: environment, topic: scan }
+        trigger: { kind: time }
+        severity:
+          onset_time: 0.5
+          ramp_up: 0.0
+          hold: -1
+          ramp_down: 0.0
+          peak: 1.0
+          profile: step
+        params:
+          model: "person.model.yaml"
+          x0: 2.0
+          y0: 0.0
+          yaw0: 0.0
+          speed: 0.0          # stationary obstacle: a clean near-return target
+          despawn_on_end: 0

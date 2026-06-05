@@ -179,6 +179,9 @@ FaultKind ParseFaultKind(const std::string &type) {
   if (type == "encoder_drift") return FaultKind::kEncoderDrift;
   if (type == "odom_slip") return FaultKind::kOdomSlip;
   if (type == "amcl_divergence") return FaultKind::kAmclDivergence;
+  if (type == "dynamic_obstacle") return FaultKind::kDynamicObstacle;
+  if (type == "moved_furniture") return FaultKind::kMovedFurniture;
+  if (type == "spill") return FaultKind::kSpill;
   return FaultKind::kUnknown;
 }
 

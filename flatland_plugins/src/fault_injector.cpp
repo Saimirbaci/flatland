@@ -126,9 +126,15 @@ void FaultInjector::OnInitialize(const YAML::Node &config) {
 
       YamlReader pr = fr.SubnodeOpt("params", YamlReader::MAP);
       if (!pr.IsNodeNull()) {
-        YAML::Node pn = pr.Node();
-        for (auto it = pn.begin(); it != pn.end(); ++it) {
-          f.params[it->first.as<std::string>()] = it->second.as<double>();
+        if (IsEnvironmentKind(f.kind)) {
+          // Environment faults carry string/list params (a model path,
+          // waypoints, poses) the numeric-only map below cannot represent.
+          ParseEnvironmentParams(f, pr);
+        } else {
+          YAML::Node pn = pr.Node();
+          for (auto it = pn.begin(); it != pn.end(); ++it) {
+            f.params[it->first.as<std::string>()] = it->second.as<double>();
+          }
         }
       }
 
@@ -217,6 +223,13 @@ void FaultInjector::BeforePhysicsStep(const Timekeeper &timekeeper) {
     const bool active = severity > 0.0;
     if (active) {
       f.ever_active = true;
+    }
+    if (IsEnvironmentKind(f.kind)) {
+      // Environment faults mutate the world directly and are NEVER inserted
+      // into the effect snapshot (no sensor/drive plugin consumes them); the
+      // registry path stays byte-for-byte unchanged for every other kind.
+      HandleEnvironmentFault(f, severity, active, timekeeper);
+    } else if (active) {
       FaultEffect eff;
       eff.active = true;
       eff.severity = severity;
@@ -304,6 +317,163 @@ void FaultInjector::UpdateModelMotion() {
       kv.second += delta.Length();
     }
     last_pos_[name] = pos;
+  }
+}
+
+void FaultInjector::ParseEnvironmentParams(Fault &f, YamlReader &pr) {
+  f.env_model_path = pr.Get<std::string>("model", "");
+  f.env_spawn_pose = Pose(pr.Get<double>("x0", 0.0), pr.Get<double>("y0", 0.0),
+                          pr.Get<double>("yaw0", 0.0));
+  f.env_dest_pose =
+      Pose(pr.Get<double>("to_x", 0.0), pr.Get<double>("to_y", 0.0),
+           pr.Get<double>("to_yaw", 0.0));
+  f.env_speed = pr.Get<double>("speed", 0.5);
+  // Booleans are carried as 0/1 doubles to stay on the numeric YamlReader path.
+  f.env_despawn_on_end = pr.Get<double>("despawn_on_end", 0.0) >= 0.5;
+  f.env_spawn_if_absent = pr.Get<double>("spawn_if_absent", 0.0) >= 0.5;
+  f.env_spill_cx = pr.Get<double>("center_x", 0.0);
+  f.env_spill_cy = pr.Get<double>("center_y", 0.0);
+  f.env_spill_radius = pr.Get<double>("radius", 1.0);
+  f.env_spill_mu_min = pr.Get<double>("mu_min", 0.3);
+
+  // Optional obstacle path: a list of [x, y] world points.
+  YamlReader wp = pr.SubnodeOpt("waypoints", YamlReader::LIST);
+  if (!wp.IsNodeNull()) {
+    for (int i = 0; i < wp.NodeSize(); i++) {
+      std::vector<double> xy =
+          wp.Subnode(i, YamlReader::LIST).AsList<double>(2, 2);
+      f.env_waypoints.push_back(b2Vec2(xy[0], xy[1]));
+    }
+  }
+}
+
+void FaultInjector::HandleEnvironmentFault(Fault &f, double severity,
+                                           bool active,
+                                           const Timekeeper &timekeeper) {
+  if (world_ == nullptr) {
+    return;
+  }
+  if (active) {
+    if (!f.env_applied) {
+      ApplyEnvironmentOnset(f);
+      f.env_applied = true;
+    }
+    if (f.kind == FaultKind::kDynamicObstacle) {
+      UpdateDynamicObstacle(f, severity, timekeeper);
+    } else if (f.kind == FaultKind::kSpill) {
+      // Severity scales the multiplier from 1.0 (no effect) toward mu_min at
+      // peak, so the spill deepens along the ramp and recovers on ramp-down.
+      const double mu = 1.0 - severity * (1.0 - f.env_spill_mu_min);
+      try {
+        world_->AddSpillRegion(f.id,
+                               b2Vec2(f.env_spill_cx, f.env_spill_cy),
+                               f.env_spill_radius, mu);
+      } catch (const flatland_server::Exception &e) {
+        ROS_WARN_NAMED("FaultInjector", "spill %s failed: %s", f.id.c_str(),
+                       e.what());
+      }
+    }
+  } else if (f.env_applied && !f.env_ended) {
+    ApplyEnvironmentEnd(f);
+    f.env_ended = true;
+  }
+}
+
+void FaultInjector::ApplyEnvironmentOnset(Fault &f) {
+  try {
+    if (f.kind == FaultKind::kDynamicObstacle) {
+      // Neutral, hand-authored-looking name so the obstacle's normal tf/markers
+      // reveal nothing a world-file obstacle would not (sealing invariant).
+      const std::string unique =
+          f.model + "_" + std::to_string(++env_spawn_counter_);
+      world_->LoadModel(f.env_model_path, "", unique, f.env_spawn_pose);
+      f.env_spawned_name = unique;
+      ROS_INFO_NAMED("FaultInjector", "dynamic_obstacle %s spawned model %s",
+                     f.id.c_str(), unique.c_str());
+    } else if (f.kind == FaultKind::kMovedFurniture) {
+      if (FindModel(f.model) != nullptr) {
+        world_->MoveModel(f.model, f.env_dest_pose);
+      } else if (f.env_spawn_if_absent && !f.env_model_path.empty()) {
+        world_->LoadModel(f.env_model_path, "", f.model, f.env_dest_pose);
+        f.env_spawned_name = f.model;
+      } else {
+        ROS_WARN_NAMED("FaultInjector",
+                       "moved_furniture %s: target model %s absent and "
+                       "spawn_if_absent not set",
+                       f.id.c_str(), f.model.c_str());
+      }
+    }
+  } catch (const flatland_server::Exception &e) {
+    ROS_WARN_NAMED("FaultInjector", "environment fault %s onset failed: %s",
+                   f.id.c_str(), e.what());
+  }
+}
+
+void FaultInjector::ApplyEnvironmentEnd(Fault &f) {
+  if (f.kind == FaultKind::kSpill) {
+    world_->RemoveSpillRegion(f.id);
+    return;
+  }
+  if (f.kind == FaultKind::kDynamicObstacle && !f.env_spawned_name.empty()) {
+    Model *m = FindModel(f.env_spawned_name);
+    if (m != nullptr && !m->bodies_.empty()) {
+      m->bodies_[0]->physics_body_->SetLinearVelocity(b2Vec2(0.0f, 0.0f));
+    }
+    if (f.env_despawn_on_end) {
+      try {
+        world_->DeleteModel(f.env_spawned_name);
+      } catch (const flatland_server::Exception &e) {
+        ROS_WARN_NAMED("FaultInjector", "despawn of %s failed: %s",
+                       f.env_spawned_name.c_str(), e.what());
+      }
+      f.env_spawned_name.clear();
+    }
+  }
+}
+
+void FaultInjector::UpdateDynamicObstacle(Fault &f, double severity,
+                                          const Timekeeper & /*timekeeper*/) {
+  if (f.env_spawned_name.empty()) {
+    return;
+  }
+  Model *m = FindModel(f.env_spawned_name);
+  if (m == nullptr || m->bodies_.empty()) {
+    return;
+  }
+  b2Body *body = m->bodies_[0]->physics_body_;
+
+  // A pathless obstacle just sits where it spawned (still a real obstacle).
+  if (f.env_waypoints.empty()) {
+    body->SetLinearVelocity(b2Vec2(0.0f, 0.0f));
+    return;
+  }
+
+  const b2Vec2 pos = body->GetPosition();
+  b2Vec2 to = f.env_waypoints[f.env_waypoint_idx] - pos;
+  double dist = to.Length();
+
+  // Reached the current waypoint -> advance, looping for a continuous patrol so
+  // the obstacle keeps crossing the robot's path for the fault duration.
+  const double kReachThreshold = 0.1;  // m
+  if (dist < kReachThreshold) {
+    f.env_waypoint_idx = (f.env_waypoint_idx + 1) % f.env_waypoints.size();
+    to = f.env_waypoints[f.env_waypoint_idx] - pos;
+    dist = to.Length();
+  }
+
+  // Velocity-driven motion (not SetPose) so Box2D resolves contact and the
+  // obstacle can nudge/block the robot. Speed scales with severity and is
+  // re-asserted each step, so collision impulses are corrected next step rather
+  // than knocking the obstacle off its path. Driven from sim time only.
+  const double speed = std::max(0.0, f.env_speed) *
+                       std::max(0.0, std::min(1.0, severity));
+  if (dist > 1e-6 && speed > 0.0) {
+    to *= static_cast<float>(1.0 / dist);  // normalize
+    body->SetLinearVelocity(
+        b2Vec2(static_cast<float>(speed) * to.x,
+               static_cast<float>(speed) * to.y));
+  } else {
+    body->SetLinearVelocity(b2Vec2(0.0f, 0.0f));
   }
 }
 

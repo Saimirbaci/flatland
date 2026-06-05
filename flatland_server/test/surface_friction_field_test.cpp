@@ -207,6 +207,75 @@ TEST(SurfaceFrictionFieldTest, marker_array_emits_only_slippery_cells) {
   EXPECT_GT(cubes.colors[0].r, cubes.colors[0].g);
 }
 
+// --- Runtime spill overlays -------------------------------------------------
+
+/**
+ * A spill activated on an otherwise-empty field makes it Enabled() and slippery
+ * inside the radius while staying nominal outside; removing it restores the
+ * clean-run 1.0-everywhere invariant.
+ */
+TEST(SurfaceFrictionFieldTest, spill_overlay_activates_and_clears) {
+  SurfaceFrictionField field;
+  EXPECT_FALSE(field.Enabled());
+
+  field.AddCircularRegion("spill_1", b2Vec2(0.0f, 0.0f), 2.0, 0.1);
+  EXPECT_TRUE(field.Enabled());
+
+  // Core (flat) is the configured multiplier.
+  EXPECT_NEAR(0.1, field.GetFrictionFactor(b2Vec2(0.0f, 0.0f)), 1e-9);
+  EXPECT_NEAR(0.1, field.GetFrictionFactor(b2Vec2(0.5f, 0.0f)), 1e-9);  // core
+  // Outside the radius is ambient.
+  EXPECT_NEAR(1.0, field.GetFrictionFactor(b2Vec2(2.5f, 0.0f)), 1e-9);
+  EXPECT_NEAR(1.0, field.GetFrictionFactor(b2Vec2(0.0f, 3.0f)), 1e-9);
+
+  field.RemoveCircularRegion("spill_1");
+  EXPECT_FALSE(field.Enabled());
+  EXPECT_NEAR(1.0, field.GetFrictionFactor(b2Vec2(0.0f, 0.0f)), 1e-9);
+}
+
+/**
+ * The spill edge feathers continuously (C0) from the core multiplier back to
+ * 1.0 at the radius, so the traction solver never sees a step change crossing
+ * the boundary, and the multiplier increases monotonically from core to edge.
+ */
+TEST(SurfaceFrictionFieldTest, spill_edge_is_continuous_and_monotonic) {
+  SurfaceFrictionField field;
+  field.AddCircularRegion("spill_1", b2Vec2(0.0f, 0.0f), 2.0, 0.2);
+
+  const double dstep = 0.005;
+  double prev = field.GetFrictionFactor(b2Vec2(0.0f, 0.0f));
+  for (double d = dstep; d <= 2.5; d += dstep) {
+    double cur = field.GetFrictionFactor(b2Vec2(static_cast<float>(d), 0.0f));
+    EXPECT_LT(std::fabs(cur - prev), 0.05) << "spill discontinuity at d=" << d;
+    EXPECT_GE(cur, prev - 1e-9) << "spill non-monotonic at d=" << d;
+    prev = cur;
+  }
+  // Exactly at the edge the overlay has feathered fully back to nominal.
+  EXPECT_NEAR(1.0, field.GetFrictionFactor(b2Vec2(2.0f, 0.0f)), 1e-9);
+}
+
+/**
+ * Re-adding a spill with the same id updates it in place (severity ramp), and a
+ * spill composes with the static raster by taking the slipperier of the two.
+ */
+TEST(SurfaceFrictionFieldTest, spill_updates_in_place_and_composes) {
+  // Static raster: uniformly dry (1.0) 4x4 grid over [0,4]x[0,4].
+  std::vector<double> grid(16, 1.0);
+  SurfaceFrictionField field(grid, 4, 4, 1.0, 0.0, 0.0);
+  EXPECT_NEAR(1.0, field.GetFrictionFactor(b2Vec2(2.0f, 2.0f)), 1e-9);
+
+  field.AddCircularRegion("spill_1", b2Vec2(2.0f, 2.0f), 1.0, 0.5);
+  EXPECT_NEAR(0.5, field.GetFrictionFactor(b2Vec2(2.0f, 2.0f)), 1e-9);
+
+  // Same id -> replaced, not duplicated; the slipperier value now applies.
+  field.AddCircularRegion("spill_1", b2Vec2(2.0f, 2.0f), 1.0, 0.2);
+  EXPECT_NEAR(0.2, field.GetFrictionFactor(b2Vec2(2.0f, 2.0f)), 1e-9);
+
+  field.RemoveCircularRegion("spill_1");
+  // Raster remains; back to the dry baseline.
+  EXPECT_NEAR(1.0, field.GetFrictionFactor(b2Vec2(2.0f, 2.0f)), 1e-9);
+}
+
 // Run all the tests that were declared with TEST()
 int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);
