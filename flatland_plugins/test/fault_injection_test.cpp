@@ -129,7 +129,12 @@ TEST(ParseTest, FaultKindAndProfile) {
   EXPECT_EQ(ParseFaultKind("torque_loss"), FaultKind::kTorqueLoss);
   EXPECT_EQ(ParseFaultKind("laser_sector_occlusion"),
             FaultKind::kLaserSectorOcclusion);
+  // Localization / odometry faults.
+  EXPECT_EQ(ParseFaultKind("encoder_drift"), FaultKind::kEncoderDrift);
+  EXPECT_EQ(ParseFaultKind("odom_slip"), FaultKind::kOdomSlip);
+  EXPECT_EQ(ParseFaultKind("amcl_divergence"), FaultKind::kAmclDivergence);
   EXPECT_EQ(ParseFaultKind("not_a_fault"), FaultKind::kUnknown);
+  EXPECT_EQ(ParseFaultKind("garbage"), FaultKind::kUnknown);
 
   EXPECT_EQ(ParseRampProfile("step"), RampProfile::kStep);
   EXPECT_EQ(ParseRampProfile("exp"), RampProfile::kExp);

@@ -381,16 +381,63 @@ void TricycleDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
     ground_truth_msg_.twist.twist.angular.y = 0;
     ground_truth_msg_.twist.twist.angular.z = angular_vel;
 
+    // Measurement-domain odometry faults (encoder_drift / odom_slip): perturb
+    // the REPORTED odom (pose, encoder-like twist) only; the true Box2D body
+    // state in ground_truth_msg_ is untouched. Until one of these faults first
+    // goes active we copy the ground-truth pose verbatim (clean-run invariant);
+    // once diverged we dead-reckon the integrated truth delta with slip/drift
+    // applied, and the error persists after the fault window (never heals).
+    double dt = timekeeper.GetStepSize();
+    auto& reg = FaultInjectionRegistry::Get();
+    FaultEffect slip = reg.GetEffect(fault_key_, FaultKind::kOdomSlip);
+    FaultEffect edrift = reg.GetEffect(fault_key_, FaultKind::kEncoderDrift);
+    double slip_factor = 1.0;
+
+    bool just_latched = false;
+    if (!odom_diverged_ && (slip.active || edrift.active)) {
+      odom_diverged_ = true;
+      odom_x_ = position.x;
+      odom_y_ = position.y;
+      odom_yaw_ = angle;
+      just_latched = true;
+    }
+    if (odom_diverged_ && !just_latched) {
+      if (slip.active) {
+        slip_factor = 1.0 + slip.severity * slip.Param("slip");
+      }
+      double dx = gt_sample_valid_ ? (position.x - last_gt_x_) : 0.0;
+      double dy = gt_sample_valid_ ? (position.y - last_gt_y_) : 0.0;
+      double dyaw = gt_sample_valid_ ? (angle - last_gt_angle_) : 0.0;
+      odom_x_ += slip_factor * dx;
+      odom_y_ += slip_factor * dy;
+      odom_yaw_ += dyaw;
+      if (edrift.active) {
+        odom_x_ += edrift.severity * edrift.Param("x_rate") * dt;
+        odom_y_ += edrift.severity * edrift.Param("y_rate") * dt;
+        odom_yaw_ += edrift.severity * edrift.Param("yaw_rate") * dt;
+      }
+    }
+    last_gt_x_ = position.x;
+    last_gt_y_ = position.y;
+    last_gt_angle_ = angle;
+    gt_sample_valid_ = true;
+
+    double report_x = odom_diverged_ ? odom_x_ : position.x;
+    double report_y = odom_diverged_ ? odom_y_ : position.y;
+    double report_yaw = odom_diverged_ ? odom_yaw_ : angle;
+
     // add the noise to odom messages
     odom_msg_.header.stamp = timekeeper.GetSimTime();
     odom_msg_.pose.pose = ground_truth_msg_.pose.pose;
     odom_msg_.twist.twist = ground_truth_msg_.twist.twist;
-    odom_msg_.pose.pose.position.x += noise_gen_[0](rng_);
-    odom_msg_.pose.pose.position.y += noise_gen_[1](rng_);
+    odom_msg_.pose.pose.position.x = report_x + noise_gen_[0](rng_);
+    odom_msg_.pose.pose.position.y = report_y + noise_gen_[1](rng_);
     odom_msg_.pose.pose.orientation =
-        tf::createQuaternionMsgFromYaw(angle + noise_gen_[2](rng_));
-    odom_msg_.twist.twist.linear.x += noise_gen_[3](rng_);
-    odom_msg_.twist.twist.linear.y += noise_gen_[4](rng_);
+        tf::createQuaternionMsgFromYaw(report_yaw + noise_gen_[2](rng_));
+    odom_msg_.twist.twist.linear.x =
+        slip_factor * odom_msg_.twist.twist.linear.x + noise_gen_[3](rng_);
+    odom_msg_.twist.twist.linear.y =
+        slip_factor * odom_msg_.twist.twist.linear.y + noise_gen_[4](rng_);
     odom_msg_.twist.twist.angular.z += noise_gen_[5](rng_);
 
     ground_truth_pub_.publish(ground_truth_msg_);

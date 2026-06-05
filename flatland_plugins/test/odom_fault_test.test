@@ -1,0 +1,12 @@
+<!--
+Test launchfile for odom_fault_test
+
+Runs rosmaster so the FaultInjector can advertise the reserved ground-truth
+topic and the drive plugins can publish their in-band odom topics, which the
+test subscribes to and asserts over.
+-->
+<launch>
+  <param name="use_sim_time" value="true"/>
+  <test pkg="flatland_plugins" type="odom_fault_test"
+        test-name="odom_fault_test" time-limit="120.0"/>
+</launch>

@@ -105,6 +105,20 @@ class TricycleDrive : public flatland_server::ModelPlugin {
 
   std::string fault_key_;  ///< registry component key (model/plugin)
 
+  // Measurement-domain odometry fault state (encoder_drift / odom_slip),
+  // mirroring DiffDrive. Perturbs the REPORTED odom only; the true Box2D motion
+  // is untouched. Until either fault first fires, odom is copied verbatim from
+  // the ground truth (clean-run byte-for-byte invariant). Divergence persists
+  // after the fault window (a real odometry error does not heal).
+  bool odom_diverged_ = false;    ///< latched once a meas. odom fault fires
+  double odom_x_ = 0.0;           ///< dead-reckoned reported odom x [m]
+  double odom_y_ = 0.0;           ///< dead-reckoned reported odom y [m]
+  double odom_yaw_ = 0.0;         ///< dead-reckoned reported odom yaw [rad]
+  double last_gt_x_ = 0.0;        ///< previous ground-truth x sample [m]
+  double last_gt_y_ = 0.0;        ///< previous ground-truth y sample [m]
+  double last_gt_angle_ = 0.0;    ///< previous ground-truth yaw sample [rad]
+  bool gt_sample_valid_ = false;  ///< true once last_gt_* hold a sample
+
   /**
    * @name                OnInitialize
    * @brief               initialize the bicycle plugin

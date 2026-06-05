@@ -1,0 +1,42 @@
+# Robot for the localization-failure scenario. A single dynamic body driven by
+# DiffDrive, carrying an Imu and a LocalizationFault component (a stand-in for an
+# AMCL node). The FaultInjector world plugin (see localization_world.yaml)
+# perturbs the in-band odom / imu / amcl_pose signals; the robot model itself
+# knows nothing about faults.
+bodies:
+  - name: base
+    type: dynamic
+    color: [1, 1, 1, 0.75]
+    footprints:
+      - type: polygon
+        density: 100
+        layers: ["2d"]
+        points: [[-0.25, -0.25],
+                 [ 0.25, -0.25],
+                 [ 0.25,  0.25],
+                 [-0.25,  0.25]]
+
+plugins:
+  - type: DiffDrive
+    name: diff_drive
+    body: base
+    odom_frame_id: odom
+    pub_rate: 100
+
+  - type: Imu
+    name: imu
+    body: base
+    update_rate: 50
+    pub_rate: 50
+
+  - type: LocalizationFault
+    name: localization
+    body: base
+    map_frame_id: map
+    odom_frame_id: odom
+    amcl_pose_pub: amcl_pose
+    update_rate: 50
+
+  - type: ModelTfPublisher
+    name: tf_publisher
+    publish_tf_world: true
