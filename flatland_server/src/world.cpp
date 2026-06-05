@@ -276,6 +276,21 @@ void World::LoadLayers(YamlReader& layers_reader) {
     Color color = reader.GetColor("color", Color(1, 1, 1, 1));
     auto properties =
         reader.SubnodeOpt("properties", YamlReader::NodeTypeCheck::MAP).Node();
+
+    // Optional procedural map mutation. Absent -> a disabled config, so the
+    // layer loads byte-for-byte as before. Sidecar/dump paths are normalized
+    // relative to the world YAML directory.
+    YamlReader mutation_reader =
+        reader.SubnodeOpt("mutation", YamlReader::NodeTypeCheck::MAP);
+    MutationConfig mutation = MapMutator::FromConfig(mutation_reader);
+    if (!mutation.manifest_path.empty() &&
+        mutation.manifest_path.front() != '/') {
+      mutation.manifest_path =
+          (world_yaml_dir_ / mutation.manifest_path).string();
+    }
+    if (!mutation.dump_path.empty() && mutation.dump_path.front() != '/') {
+      mutation.dump_path = (world_yaml_dir_ / mutation.dump_path).string();
+    }
     reader.EnsureAccessedAllKeys();
 
     for (const auto& name : names) {
@@ -292,7 +307,7 @@ void World::LoadLayers(YamlReader& layers_reader) {
                    names[0].c_str(), map_path.string().c_str());
 
     Layer* layer = Layer::MakeLayer(physics_world_, &cfr_, map_path.string(),
-                                    names, color, properties);
+                                    names, color, properties, mutation);
     layers_name_map_.insert(
         std::pair<std::vector<std::string>, Layer*>(names, layer));
     layers_.push_back(layer);

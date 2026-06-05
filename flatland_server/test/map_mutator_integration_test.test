@@ -1,0 +1,10 @@
+<!--
+Test launchfile for map_mutator_integration_test
+
+Runs rosmaster so World::MakeWorld can load a world whose layer carries an
+enabled `mutation:` block.
+-->
+<launch>
+  <test pkg="flatland_server" type="map_mutator_integration_test"
+        test-name="map_mutator_integration_test"/>
+</launch>

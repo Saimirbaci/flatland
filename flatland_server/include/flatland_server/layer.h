@@ -51,6 +51,7 @@
 #include <flatland_server/body.h>
 #include <flatland_server/collision_filter_registry.h>
 #include <flatland_server/entity.h>
+#include <flatland_server/map_mutator.h>
 #include <flatland_server/types.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <yaml-cpp/yaml.h>
@@ -224,12 +225,17 @@ class Layer : public Entity {
    * @param[in] color Color of the layer
    * file, this is used to calculate the path to the layermap yaml file
    * @param[in] properties A YAML node containing properties for plugins to use
+   * @param[in] mutation Optional procedural mutation config; when enabled the
+   * occupancy bitmap is deterministically perturbed (seeded from RngManager)
+   * before collision geometry and the occupancy grid are built. Defaults to a
+   * disabled config, preserving byte-for-byte behavior for existing worlds.
    * @return A new layer
    */
   static Layer* MakeLayer(b2World* physics_world, CollisionFilterRegistry* cfr,
                           const std::string& map_path,
                           const std::vector<std::string>& names,
-                          const Color& color, const YAML::Node& properties);
+                          const Color& color, const YAML::Node& properties,
+                          const MutationConfig& mutation = MutationConfig());
 };
 };  // namespace flatland_server
 #endif  // FLATLAND_SERVER_WORLD_H

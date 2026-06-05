@@ -49,6 +49,8 @@
 #include <flatland_server/exceptions.h>
 #include <flatland_server/geometry.h>
 #include <flatland_server/layer.h>
+#include <flatland_server/map_mutator.h>
+#include <flatland_server/random.h>
 #include <flatland_server/yaml_reader.h>
 #include <ros/ros.h>
 #include <yaml-cpp/yaml.h>
@@ -131,7 +133,8 @@ Body* Layer::GetBody() { return body_; }
 Layer* Layer::MakeLayer(b2World* physics_world, CollisionFilterRegistry* cfr,
                         const std::string& map_path,
                         const std::vector<std::string>& names,
-                        const Color& color, const YAML::Node& properties) {
+                        const Color& color, const YAML::Node& properties,
+                        const MutationConfig& mutation) {
   if (map_path.length() > 0) {  // If there is a map in this layer
     YamlReader reader(map_path);
     reader.SetErrorInfo("layer " + Q(names[0]));
@@ -179,6 +182,27 @@ Layer* Layer::MakeLayer(b2World* physics_world, CollisionFilterRegistry* cfr,
 
       cv::Mat bitmap;
       map.convertTo(bitmap, CV_32FC1, 1.0 / 255.0);
+
+      // Procedurally perturb the occupancy bitmap before any collision geometry
+      // or occupancy grid is built, so both views consume the mutated map. The
+      // engine is derived from the global run seed (RngManager) keyed by the
+      // layer name (or an explicit override) for per-layer reproducibility.
+      if (mutation.enabled) {
+        const std::string seed_key =
+            mutation.seed_key.empty() ? names[0] : mutation.seed_key;
+        std::default_random_engine rng =
+            RngManager::Get().DeriveEngine(seed_key);
+
+        MutationManifest manifest;
+        manifest.global_seed = RngManager::Get().GetSeed();
+        manifest.derived_seed = RngManager::Get().DeriveSeed(seed_key);
+        manifest.seed_key = seed_key;
+        manifest.layer_name = names[0];
+
+        bitmap = MapMutator::Apply(bitmap, resolution, occupied_thresh,
+                                   mutation, rng, &manifest);
+        MapMutator::WriteManifest(manifest, mutation.manifest_path);
+      }
 
       return new Layer(physics_world, cfr, names, color, origin, bitmap,
                        occupied_thresh, resolution, properties);

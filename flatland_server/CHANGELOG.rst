@@ -4,6 +4,16 @@ Changelog for package flatland_server
 
 Forthcoming
 -----------
+* Procedural map mutation engine: an optional per-layer ``mutation:`` block
+  deterministically perturbs the static occupancy map at load time — bounded
+  wall shift/rotate (``wall_jitter``), corridor widening/narrowing
+  (``aisle_width``), and clutter add/remove with density scaling (``clutter``,
+  ``obstacle_density``) — so mapping/localization is tested against novel maps
+  instead of one fixed map. Seeded from the run ``seed`` via ``RngManager``
+  (per-layer ``seed_key``) for byte-reproducible runs, with an optional sealed
+  out-of-band JSON manifest (``manifest_path``) recording exactly what changed.
+  Absent / ``enabled: false`` leaves existing worlds byte-for-byte identical.
+  See ``doc/map_mutation.md``.
 * Diagnostic overlay publishers for the modernized flatland_viz. Each
   image-based layer now also publishes a latched ``nav_msgs/OccupancyGrid``
   (``/flatland_server/layers/<name>/occupancy`` plus the stable
