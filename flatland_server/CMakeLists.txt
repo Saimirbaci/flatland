@@ -89,6 +89,7 @@ add_library(flatland_lib
   src/simulation_manager.cpp
   src/world.cpp
   src/layer.cpp
+  src/map_mutator.cpp
   src/surface_friction_field.cpp
   src/model.cpp
   src/entity.cpp
@@ -229,6 +230,18 @@ if(CATKIN_ENABLE_TESTING)
   catkin_add_gtest(surface_friction_field_test
     test/surface_friction_field_test.cpp)
   target_link_libraries(surface_friction_field_test
+    flatland_lib)
+
+  catkin_add_gtest(map_mutator_test
+    test/map_mutator_test.cpp)
+  target_link_libraries(map_mutator_test
+    flatland_lib
+    ${OpenCV_LIBRARIES})
+
+  add_rostest_gtest(map_mutator_integration_test
+    test/map_mutator_integration_test.test
+    test/map_mutator_integration_test.cpp)
+  target_link_libraries(map_mutator_integration_test
     flatland_lib)
 
   catkin_add_gtest(collision_filter_registry_test

@@ -1,0 +1,25 @@
+# Integration test world for the procedural map mutation engine.
+# A single image layer with a `mutation:` block enabled. The fixed seed in
+# properties makes the mutated map (and the sealed manifest) reproducible.
+properties:
+  seed: 42
+
+layers:
+  - name: "2d"
+    map: "map.yaml"
+    color: [0, 1, 0, 1]
+    mutation:
+      enabled: true
+      manifest_path: "/tmp/flatland_map_mutation_test.json"
+      wall_jitter:
+        max_translation_m: 0.10
+        max_rotation_deg: 2.0
+      aisle_width:
+        dilate_erode_range_m: [-0.05, 0.05]
+      clutter:
+        add_count_range: [3, 6]
+        remove_fraction: 0.25
+        blob_size_m_range: [0.10, 0.30]
+        max_component_size_m: 0.5
+      obstacle_density:
+        target_scale: 1.0
