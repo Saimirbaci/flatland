@@ -37,5 +37,15 @@ python -m scenario_gen.run \
 output the runner writes (composite score + component metrics + weights +
 reproducibility metadata). Higher `composite_score` = the algorithm did worse.
 
+### Closed-loop DR controller
+
+`sample_failure_boundary.json` shows the **shape** of the failure-boundary report
+the closed-loop domain-randomization controller emits at the end of a run
+(per-dimension `P(fail)=0.5` crossings, a logistic-regression surrogate ranking
+the failure-driving knobs, and frontier examples). It is generated from a
+synthetic rule for illustration. See [`../README.md`](../README.md) for the DR
+controller, the `--proposer dr --fail-threshold` CLI, and the
+`failure_boundary.json` contract.
+
 See [`../../docs/scenario_generator.md`](../../docs/scenario_generator.md) for the
 full contract and the curriculum loop.

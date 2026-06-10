@@ -4,3 +4,4 @@
 """Proposer implementations. See base.Proposer for the contract."""
 
 from .base import Proposer, Proposal, make_proposer  # noqa: F401
+from .dr_proposer import DomainRandomizationProposer  # noqa: F401

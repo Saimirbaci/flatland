@@ -1,0 +1,1690 @@
+{
+  "coverage_note": "",
+  "fail_rate": 0.0875,
+  "fail_terminals": [
+    "collision",
+    "collisions",
+    "goal_failure",
+    "timeout",
+    "wall_timeout"
+  ],
+  "fail_threshold": 0.6,
+  "frontier_examples": [
+    {
+      "difficulty": 0.572,
+      "genome_hash": "daaa1e5c32f9",
+      "score": 0.82,
+      "seed": 20,
+      "terminal": "collision",
+      "values": {
+        "fault0_enable": 0.5004721771179256,
+        "fault0_magnitude": 0.6037136409459106,
+        "fault0_onset_s": 8.75517727143196,
+        "fault0_peak": 0.5980366620411036,
+        "fault0_type": 15
+      }
+    },
+    {
+      "difficulty": 0.4373,
+      "genome_hash": "7a3e02bd7625",
+      "score": 0.82,
+      "seed": 47,
+      "terminal": "collision",
+      "values": {
+        "fault0_enable": 0.8790756636004186,
+        "fault0_magnitude": 0.2151444225262411,
+        "fault0_onset_s": 0.46352596432702065,
+        "fault0_peak": 0.9452328040692373,
+        "fault0_type": 15
+      }
+    },
+    {
+      "difficulty": 0.6229,
+      "genome_hash": "38279139ee7d",
+      "score": 0.82,
+      "seed": 54,
+      "terminal": "collision",
+      "values": {
+        "fault0_enable": 0.5281731240731934,
+        "fault0_magnitude": 0.5054870560925958,
+        "fault0_onset_s": 1.5620544429488037,
+        "fault0_peak": 0.5641687222734748,
+        "fault0_type": 11
+      }
+    }
+  ],
+  "n_excluded_invalid": 0,
+  "n_failures": 14,
+  "n_samples": 160,
+  "per_dim": [
+    {
+      "confidence": "high",
+      "direction": "off",
+      "group": "map",
+      "n_off": 78,
+      "n_on": 82,
+      "name": "mut_wall_jitter_enable",
+      "p_fail_off": 0.0897,
+      "p_fail_on": 0.0854,
+      "type": "gate"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "lower",
+      "fail_region": null,
+      "group": "map",
+      "n_active": 82,
+      "name": "mut_wall_translation_m",
+      "p_fail_curve": [
+        [
+          0.0325,
+          0.0625,
+          16
+        ],
+        [
+          0.1152,
+          0.125,
+          16
+        ],
+        [
+          0.1797,
+          0.0588,
+          17
+        ],
+        [
+          0.2158,
+          0.125,
+          16
+        ],
+        [
+          0.277,
+          0.0588,
+          17
+        ]
+      ],
+      "sensitivity": -0.0255,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "higher",
+      "fail_region": null,
+      "group": "map",
+      "n_active": 82,
+      "name": "mut_wall_rotation_deg",
+      "p_fail_curve": [
+        [
+          0.4875,
+          0.0,
+          16
+        ],
+        [
+          1.372,
+          0.0,
+          16
+        ],
+        [
+          2.4864,
+          0.1176,
+          17
+        ],
+        [
+          3.3221,
+          0.1875,
+          16
+        ],
+        [
+          4.3678,
+          0.1176,
+          17
+        ]
+      ],
+      "sensitivity": 0.199,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "direction": "on",
+      "group": "map",
+      "n_off": 77,
+      "n_on": 83,
+      "name": "mut_aisle_enable",
+      "p_fail_off": 0.0649,
+      "p_fail_on": 0.1084,
+      "type": "gate"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "higher",
+      "fail_region": null,
+      "group": "map",
+      "n_active": 83,
+      "name": "mut_aisle_delta_m",
+      "p_fail_curve": [
+        [
+          -0.1116,
+          0.0625,
+          16
+        ],
+        [
+          -0.0089,
+          0.1765,
+          17
+        ],
+        [
+          0.05,
+          0.0,
+          16
+        ],
+        [
+          0.1227,
+          0.0588,
+          17
+        ],
+        [
+          0.208,
+          0.2353,
+          17
+        ]
+      ],
+      "sensitivity": 0.1188,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "direction": "on",
+      "group": "map",
+      "n_off": 72,
+      "n_on": 88,
+      "name": "mut_clutter_enable",
+      "p_fail_off": 0.0556,
+      "p_fail_on": 0.1136,
+      "type": "gate"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "lower",
+      "fail_region": null,
+      "group": "map",
+      "n_active": 88,
+      "name": "mut_clutter_add_min",
+      "p_fail_curve": [
+        [
+          1.1765,
+          0.1765,
+          17
+        ],
+        [
+          3.8333,
+          0.1667,
+          18
+        ],
+        [
+          5.8824,
+          0.1176,
+          17
+        ],
+        [
+          7.6111,
+          0.1111,
+          18
+        ],
+        [
+          9.1111,
+          0.0,
+          18
+        ]
+      ],
+      "sensitivity": -0.1571,
+      "type": "int"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "lower",
+      "fail_region": null,
+      "group": "map",
+      "n_active": 88,
+      "name": "mut_clutter_add_span",
+      "p_fail_curve": [
+        [
+          0.4706,
+          0.0588,
+          17
+        ],
+        [
+          2.5,
+          0.2222,
+          18
+        ],
+        [
+          5.5882,
+          0.1176,
+          17
+        ],
+        [
+          7.5,
+          0.1111,
+          18
+        ],
+        [
+          9.3889,
+          0.0556,
+          18
+        ]
+      ],
+      "sensitivity": -0.0685,
+      "type": "int"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "higher",
+      "fail_region": null,
+      "group": "map",
+      "n_active": 88,
+      "name": "mut_clutter_remove_fraction",
+      "p_fail_curve": [
+        [
+          0.108,
+          0.0588,
+          17
+        ],
+        [
+          0.3278,
+          0.0,
+          18
+        ],
+        [
+          0.596,
+          0.0588,
+          17
+        ],
+        [
+          0.7629,
+          0.2222,
+          18
+        ],
+        [
+          0.9326,
+          0.2222,
+          18
+        ]
+      ],
+      "sensitivity": 0.2425,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "higher",
+      "fail_region": null,
+      "group": "map",
+      "n_active": 88,
+      "name": "mut_clutter_blob_min_m",
+      "p_fail_curve": [
+        [
+          0.0808,
+          0.0,
+          17
+        ],
+        [
+          0.1548,
+          0.1111,
+          18
+        ],
+        [
+          0.2172,
+          0.1176,
+          17
+        ],
+        [
+          0.3096,
+          0.1667,
+          18
+        ],
+        [
+          0.3637,
+          0.1667,
+          18
+        ]
+      ],
+      "sensitivity": 0.1188,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "lower",
+      "fail_region": null,
+      "group": "map",
+      "n_active": 88,
+      "name": "mut_clutter_blob_span_m",
+      "p_fail_curve": [
+        [
+          0.0464,
+          0.1176,
+          17
+        ],
+        [
+          0.1344,
+          0.1667,
+          18
+        ],
+        [
+          0.1967,
+          0.1176,
+          17
+        ],
+        [
+          0.2557,
+          0.1111,
+          18
+        ],
+        [
+          0.3326,
+          0.0556,
+          18
+        ]
+      ],
+      "sensitivity": -0.0653,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "direction": "on",
+      "group": "map",
+      "n_off": 81,
+      "n_on": 79,
+      "name": "mut_density_enable",
+      "p_fail_off": 0.0741,
+      "p_fail_on": 0.1013,
+      "type": "gate"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "lower",
+      "fail_region": null,
+      "group": "map",
+      "n_active": 79,
+      "name": "mut_density_scale",
+      "p_fail_curve": [
+        [
+          0.7079,
+          0.1333,
+          15
+        ],
+        [
+          1.232,
+          0.125,
+          16
+        ],
+        [
+          1.7178,
+          0.0,
+          16
+        ],
+        [
+          2.1077,
+          0.1875,
+          16
+        ],
+        [
+          2.7405,
+          0.0625,
+          16
+        ]
+      ],
+      "sensitivity": -0.0505,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "direction": "category",
+      "group": "placement",
+      "name": "start_idx",
+      "per_category": [
+        {
+          "category": 0,
+          "n": 21,
+          "p_fail": 0.1429
+        },
+        {
+          "category": 1,
+          "n": 19,
+          "p_fail": 0.0526
+        },
+        {
+          "category": 2,
+          "n": 21,
+          "p_fail": 0.0476
+        },
+        {
+          "category": 3,
+          "n": 17,
+          "p_fail": 0.0588
+        },
+        {
+          "category": 4,
+          "n": 21,
+          "p_fail": 0.2381
+        },
+        {
+          "category": 5,
+          "n": 20,
+          "p_fail": 0.0
+        },
+        {
+          "category": 6,
+          "n": 17,
+          "p_fail": 0.1176
+        },
+        {
+          "category": 7,
+          "n": 24,
+          "p_fail": 0.0417
+        }
+      ],
+      "type": "categorical",
+      "worst_category": 4
+    },
+    {
+      "confidence": "high",
+      "direction": "category",
+      "group": "placement",
+      "name": "goal_idx",
+      "per_category": [
+        {
+          "category": 0,
+          "n": 24,
+          "p_fail": 0.0417
+        },
+        {
+          "category": 1,
+          "n": 23,
+          "p_fail": 0.1739
+        },
+        {
+          "category": 2,
+          "n": 22,
+          "p_fail": 0.0909
+        },
+        {
+          "category": 3,
+          "n": 18,
+          "p_fail": 0.0556
+        },
+        {
+          "category": 4,
+          "n": 18,
+          "p_fail": 0.0556
+        },
+        {
+          "category": 5,
+          "n": 18,
+          "p_fail": 0.0556
+        },
+        {
+          "category": 6,
+          "n": 17,
+          "p_fail": 0.0
+        },
+        {
+          "category": 7,
+          "n": 20,
+          "p_fail": 0.2
+        }
+      ],
+      "type": "categorical",
+      "worst_category": 7
+    },
+    {
+      "confidence": "high",
+      "direction": "on",
+      "group": "fault",
+      "n_off": 91,
+      "n_on": 69,
+      "name": "fault0_enable",
+      "p_fail_off": 0.0,
+      "p_fail_on": 0.2029,
+      "type": "gate"
+    },
+    {
+      "confidence": "low",
+      "direction": "category",
+      "group": "fault",
+      "name": "fault0_type",
+      "per_category": [
+        {
+          "category": 0,
+          "n": 5,
+          "p_fail": 0.0
+        },
+        {
+          "category": 1,
+          "n": 9,
+          "p_fail": 0.1111
+        },
+        {
+          "category": 2,
+          "n": 9,
+          "p_fail": 0.0
+        },
+        {
+          "category": 3,
+          "n": 7,
+          "p_fail": 0.1429
+        },
+        {
+          "category": 4,
+          "n": 5,
+          "p_fail": 0.0
+        },
+        {
+          "category": 5,
+          "n": 9,
+          "p_fail": 0.1111
+        },
+        {
+          "category": 6,
+          "n": 8,
+          "p_fail": 0.0
+        },
+        {
+          "category": 7,
+          "n": 12,
+          "p_fail": 0.1667
+        },
+        {
+          "category": 8,
+          "n": 6,
+          "p_fail": 0.0
+        },
+        {
+          "category": 9,
+          "n": 11,
+          "p_fail": 0.0909
+        },
+        {
+          "category": 10,
+          "n": 4,
+          "p_fail": 0.0
+        },
+        {
+          "category": 11,
+          "n": 10,
+          "p_fail": 0.1
+        },
+        {
+          "category": 12,
+          "n": 8,
+          "p_fail": 0.125
+        },
+        {
+          "category": 13,
+          "n": 9,
+          "p_fail": 0.0
+        },
+        {
+          "category": 14,
+          "n": 9,
+          "p_fail": 0.1111
+        },
+        {
+          "category": 15,
+          "n": 9,
+          "p_fail": 0.2222
+        },
+        {
+          "category": 16,
+          "n": 3,
+          "p_fail": 0.0
+        },
+        {
+          "category": 17,
+          "n": 11,
+          "p_fail": 0.1818
+        },
+        {
+          "category": 18,
+          "n": 16,
+          "p_fail": 0.0625
+        }
+      ],
+      "type": "categorical",
+      "worst_category": 15
+    },
+    {
+      "confidence": "high",
+      "crossing": 4.7839,
+      "direction": "lower",
+      "fail_region": [
+        6.492,
+        6.492
+      ],
+      "group": "fault",
+      "n_active": 69,
+      "name": "fault0_onset_s",
+      "p_fail_curve": [
+        [
+          2.0248,
+          0.3846,
+          13
+        ],
+        [
+          6.492,
+          0.5714,
+          14
+        ],
+        [
+          11.2289,
+          0.0714,
+          14
+        ],
+        [
+          14.9716,
+          0.0,
+          14
+        ],
+        [
+          18.7342,
+          0.0,
+          14
+        ]
+      ],
+      "sensitivity": -0.5008,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "higher",
+      "fail_region": null,
+      "group": "fault",
+      "n_active": 69,
+      "name": "fault0_peak",
+      "p_fail_curve": [
+        [
+          0.1284,
+          0.0,
+          13
+        ],
+        [
+          0.3993,
+          0.0,
+          14
+        ],
+        [
+          0.5788,
+          0.3571,
+          14
+        ],
+        [
+          0.7571,
+          0.3571,
+          14
+        ],
+        [
+          0.9227,
+          0.2857,
+          14
+        ]
+      ],
+      "sensitivity": 0.3775,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "higher",
+      "fail_region": null,
+      "group": "fault",
+      "n_active": 69,
+      "name": "fault0_ramp_up_s",
+      "p_fail_curve": [
+        [
+          0.3555,
+          0.1538,
+          13
+        ],
+        [
+          1.2003,
+          0.2857,
+          14
+        ],
+        [
+          2.0591,
+          0.1429,
+          14
+        ],
+        [
+          3.1047,
+          0.1429,
+          14
+        ],
+        [
+          4.5419,
+          0.2857,
+          14
+        ]
+      ],
+      "sensitivity": 0.0456,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "lower",
+      "fail_region": null,
+      "group": "fault",
+      "n_active": 69,
+      "name": "fault0_hold_s",
+      "p_fail_curve": [
+        [
+          6.5286,
+          0.2308,
+          13
+        ],
+        [
+          17.8047,
+          0.2857,
+          14
+        ],
+        [
+          29.4505,
+          0.1429,
+          14
+        ],
+        [
+          45.4043,
+          0.1429,
+          14
+        ],
+        [
+          56.2968,
+          0.2143,
+          14
+        ]
+      ],
+      "sensitivity": -0.0877,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "higher",
+      "fail_region": null,
+      "group": "fault",
+      "n_active": 69,
+      "name": "fault0_magnitude",
+      "p_fail_curve": [
+        [
+          0.0921,
+          0.1538,
+          13
+        ],
+        [
+          0.2311,
+          0.2143,
+          14
+        ],
+        [
+          0.4131,
+          0.2143,
+          14
+        ],
+        [
+          0.6767,
+          0.2143,
+          14
+        ],
+        [
+          0.9187,
+          0.2143,
+          14
+        ]
+      ],
+      "sensitivity": 0.0409,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "direction": "off",
+      "group": "fault",
+      "n_off": 79,
+      "n_on": 81,
+      "name": "fault1_enable",
+      "p_fail_off": 0.1139,
+      "p_fail_on": 0.0617,
+      "type": "gate"
+    },
+    {
+      "confidence": "low",
+      "direction": "category",
+      "group": "fault",
+      "name": "fault1_type",
+      "per_category": [
+        {
+          "category": 0,
+          "n": 4,
+          "p_fail": 0.25
+        },
+        {
+          "category": 1,
+          "n": 7,
+          "p_fail": 0.1429
+        },
+        {
+          "category": 2,
+          "n": 5,
+          "p_fail": 0.0
+        },
+        {
+          "category": 3,
+          "n": 10,
+          "p_fail": 0.2
+        },
+        {
+          "category": 4,
+          "n": 7,
+          "p_fail": 0.1429
+        },
+        {
+          "category": 5,
+          "n": 8,
+          "p_fail": 0.125
+        },
+        {
+          "category": 6,
+          "n": 8,
+          "p_fail": 0.125
+        },
+        {
+          "category": 7,
+          "n": 7,
+          "p_fail": 0.1429
+        },
+        {
+          "category": 8,
+          "n": 4,
+          "p_fail": 0.25
+        },
+        {
+          "category": 9,
+          "n": 14,
+          "p_fail": 0.0
+        },
+        {
+          "category": 10,
+          "n": 7,
+          "p_fail": 0.0
+        },
+        {
+          "category": 11,
+          "n": 11,
+          "p_fail": 0.0909
+        },
+        {
+          "category": 12,
+          "n": 14,
+          "p_fail": 0.0
+        },
+        {
+          "category": 13,
+          "n": 11,
+          "p_fail": 0.0
+        },
+        {
+          "category": 14,
+          "n": 8,
+          "p_fail": 0.125
+        },
+        {
+          "category": 15,
+          "n": 7,
+          "p_fail": 0.1429
+        },
+        {
+          "category": 16,
+          "n": 11,
+          "p_fail": 0.0909
+        },
+        {
+          "category": 17,
+          "n": 11,
+          "p_fail": 0.0909
+        },
+        {
+          "category": 18,
+          "n": 6,
+          "p_fail": 0.0
+        }
+      ],
+      "type": "categorical",
+      "worst_category": 0
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "higher",
+      "fail_region": null,
+      "group": "fault",
+      "n_active": 81,
+      "name": "fault1_onset_s",
+      "p_fail_curve": [
+        [
+          1.7006,
+          0.0625,
+          16
+        ],
+        [
+          5.4288,
+          0.0,
+          16
+        ],
+        [
+          10.254,
+          0.0625,
+          16
+        ],
+        [
+          13.3429,
+          0.0,
+          16
+        ],
+        [
+          17.073,
+          0.1765,
+          17
+        ]
+      ],
+      "sensitivity": 0.1676,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "higher",
+      "fail_region": null,
+      "group": "fault",
+      "n_active": 81,
+      "name": "fault1_peak",
+      "p_fail_curve": [
+        [
+          0.1212,
+          0.0,
+          16
+        ],
+        [
+          0.3327,
+          0.0625,
+          16
+        ],
+        [
+          0.5154,
+          0.0625,
+          16
+        ],
+        [
+          0.6628,
+          0.0625,
+          16
+        ],
+        [
+          0.8567,
+          0.1176,
+          17
+        ]
+      ],
+      "sensitivity": 0.1519,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "lower",
+      "fail_region": null,
+      "group": "fault",
+      "n_active": 81,
+      "name": "fault1_ramp_up_s",
+      "p_fail_curve": [
+        [
+          0.542,
+          0.0625,
+          16
+        ],
+        [
+          1.444,
+          0.0,
+          16
+        ],
+        [
+          2.2443,
+          0.1875,
+          16
+        ],
+        [
+          3.1616,
+          0.0625,
+          16
+        ],
+        [
+          4.3321,
+          0.0,
+          17
+        ]
+      ],
+      "sensitivity": -0.0574,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "lower",
+      "fail_region": null,
+      "group": "fault",
+      "n_active": 81,
+      "name": "fault1_hold_s",
+      "p_fail_curve": [
+        [
+          9.2851,
+          0.0,
+          16
+        ],
+        [
+          24.2496,
+          0.125,
+          16
+        ],
+        [
+          37.1208,
+          0.0625,
+          16
+        ],
+        [
+          43.2903,
+          0.125,
+          16
+        ],
+        [
+          54.2091,
+          0.0,
+          17
+        ]
+      ],
+      "sensitivity": -0.0233,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "lower",
+      "fail_region": null,
+      "group": "fault",
+      "n_active": 81,
+      "name": "fault1_magnitude",
+      "p_fail_curve": [
+        [
+          0.0613,
+          0.125,
+          16
+        ],
+        [
+          0.213,
+          0.0,
+          16
+        ],
+        [
+          0.4666,
+          0.0625,
+          16
+        ],
+        [
+          0.6921,
+          0.125,
+          16
+        ],
+        [
+          0.912,
+          0.0,
+          17
+        ]
+      ],
+      "sensitivity": -0.1009,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "direction": "off",
+      "group": "fault",
+      "n_off": 81,
+      "n_on": 79,
+      "name": "fault2_enable",
+      "p_fail_off": 0.0988,
+      "p_fail_on": 0.0759,
+      "type": "gate"
+    },
+    {
+      "confidence": "low",
+      "direction": "category",
+      "group": "fault",
+      "name": "fault2_type",
+      "per_category": [
+        {
+          "category": 0,
+          "n": 6,
+          "p_fail": 0.1667
+        },
+        {
+          "category": 1,
+          "n": 12,
+          "p_fail": 0.0833
+        },
+        {
+          "category": 2,
+          "n": 4,
+          "p_fail": 0.0
+        },
+        {
+          "category": 3,
+          "n": 6,
+          "p_fail": 0.3333
+        },
+        {
+          "category": 4,
+          "n": 14,
+          "p_fail": 0.0714
+        },
+        {
+          "category": 5,
+          "n": 7,
+          "p_fail": 0.1429
+        },
+        {
+          "category": 6,
+          "n": 10,
+          "p_fail": 0.1
+        },
+        {
+          "category": 7,
+          "n": 6,
+          "p_fail": 0.0
+        },
+        {
+          "category": 8,
+          "n": 4,
+          "p_fail": 0.25
+        },
+        {
+          "category": 9,
+          "n": 4,
+          "p_fail": 0.0
+        },
+        {
+          "category": 10,
+          "n": 12,
+          "p_fail": 0.1667
+        },
+        {
+          "category": 11,
+          "n": 12,
+          "p_fail": 0.0
+        },
+        {
+          "category": 12,
+          "n": 9,
+          "p_fail": 0.1111
+        },
+        {
+          "category": 13,
+          "n": 7,
+          "p_fail": 0.0
+        },
+        {
+          "category": 14,
+          "n": 7,
+          "p_fail": 0.0
+        },
+        {
+          "category": 15,
+          "n": 8,
+          "p_fail": 0.125
+        },
+        {
+          "category": 16,
+          "n": 8,
+          "p_fail": 0.25
+        },
+        {
+          "category": 17,
+          "n": 11,
+          "p_fail": 0.0
+        },
+        {
+          "category": 18,
+          "n": 13,
+          "p_fail": 0.0
+        }
+      ],
+      "type": "categorical",
+      "worst_category": 3
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "higher",
+      "fail_region": null,
+      "group": "fault",
+      "n_active": 79,
+      "name": "fault2_onset_s",
+      "p_fail_curve": [
+        [
+          1.428,
+          0.0667,
+          15
+        ],
+        [
+          4.8994,
+          0.0625,
+          16
+        ],
+        [
+          8.7615,
+          0.0625,
+          16
+        ],
+        [
+          13.1794,
+          0.125,
+          16
+        ],
+        [
+          17.43,
+          0.0625,
+          16
+        ]
+      ],
+      "sensitivity": 0.0181,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "higher",
+      "fail_region": null,
+      "group": "fault",
+      "n_active": 79,
+      "name": "fault2_peak",
+      "p_fail_curve": [
+        [
+          0.1,
+          0.0,
+          15
+        ],
+        [
+          0.3009,
+          0.0625,
+          16
+        ],
+        [
+          0.563,
+          0.0625,
+          16
+        ],
+        [
+          0.7554,
+          0.125,
+          16
+        ],
+        [
+          0.8974,
+          0.125,
+          16
+        ]
+      ],
+      "sensitivity": 0.1557,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "lower",
+      "fail_region": null,
+      "group": "fault",
+      "n_active": 79,
+      "name": "fault2_ramp_up_s",
+      "p_fail_curve": [
+        [
+          0.4765,
+          0.1333,
+          15
+        ],
+        [
+          1.2141,
+          0.0625,
+          16
+        ],
+        [
+          2.1146,
+          0.0625,
+          16
+        ],
+        [
+          3.231,
+          0.0,
+          16
+        ],
+        [
+          4.3929,
+          0.125,
+          16
+        ]
+      ],
+      "sensitivity": -0.012,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "higher",
+      "fail_region": null,
+      "group": "fault",
+      "n_active": 79,
+      "name": "fault2_hold_s",
+      "p_fail_curve": [
+        [
+          7.7625,
+          0.0,
+          15
+        ],
+        [
+          20.985,
+          0.0625,
+          16
+        ],
+        [
+          33.3584,
+          0.1875,
+          16
+        ],
+        [
+          42.4622,
+          0.0,
+          16
+        ],
+        [
+          53.7094,
+          0.125,
+          16
+        ]
+      ],
+      "sensitivity": 0.1104,
+      "type": "float"
+    },
+    {
+      "confidence": "high",
+      "crossing": null,
+      "direction": "lower",
+      "fail_region": null,
+      "group": "fault",
+      "n_active": 79,
+      "name": "fault2_magnitude",
+      "p_fail_curve": [
+        [
+          0.1211,
+          0.1333,
+          15
+        ],
+        [
+          0.2818,
+          0.0625,
+          16
+        ],
+        [
+          0.4704,
+          0.0625,
+          16
+        ],
+        [
+          0.6981,
+          0.0,
+          16
+        ],
+        [
+          0.9202,
+          0.125,
+          16
+        ]
+      ],
+      "sensitivity": -0.0162,
+      "type": "float"
+    }
+  ],
+  "ranked_dimensions": [
+    "fault0_onset_s",
+    "fault0_enable",
+    "fault0_peak",
+    "fault1_enable",
+    "mut_clutter_add_span",
+    "mut_wall_rotation_deg",
+    "fault1_type",
+    "fault2_type",
+    "fault1_ramp_up_s",
+    "mut_wall_jitter_enable",
+    "mut_clutter_add_min",
+    "mut_clutter_remove_fraction",
+    "mut_clutter_blob_span_m",
+    "fault0_ramp_up_s",
+    "start_idx",
+    "fault0_hold_s",
+    "fault1_onset_s",
+    "mut_aisle_enable",
+    "mut_density_scale",
+    "fault2_onset_s",
+    "fault1_hold_s",
+    "fault2_enable",
+    "fault2_magnitude",
+    "fault2_hold_s",
+    "fault2_ramp_up_s",
+    "fault0_magnitude",
+    "fault1_peak",
+    "mut_wall_translation_m",
+    "fault1_magnitude",
+    "mut_clutter_blob_min_m",
+    "fault0_type",
+    "mut_density_enable",
+    "mut_aisle_delta_m",
+    "mut_clutter_enable",
+    "goal_idx",
+    "fault2_peak"
+  ],
+  "schema_version": 1,
+  "surrogate_bias": -0.678131,
+  "surrogate_weights": [
+    {
+      "abs_weight": 0.598062,
+      "name": "mut_wall_jitter_enable",
+      "weight": -0.598062
+    },
+    {
+      "abs_weight": 0.209555,
+      "name": "mut_wall_translation_m",
+      "weight": -0.209555
+    },
+    {
+      "abs_weight": 0.792882,
+      "name": "mut_wall_rotation_deg",
+      "weight": 0.792882
+    },
+    {
+      "abs_weight": 0.382772,
+      "name": "mut_aisle_enable",
+      "weight": 0.382772
+    },
+    {
+      "abs_weight": 0.078951,
+      "name": "mut_aisle_delta_m",
+      "weight": 0.078951
+    },
+    {
+      "abs_weight": 0.04171,
+      "name": "mut_clutter_enable",
+      "weight": 0.04171
+    },
+    {
+      "abs_weight": 0.570525,
+      "name": "mut_clutter_add_min",
+      "weight": -0.570525
+    },
+    {
+      "abs_weight": 0.846831,
+      "name": "mut_clutter_add_span",
+      "weight": -0.846831
+    },
+    {
+      "abs_weight": 0.526055,
+      "name": "mut_clutter_remove_fraction",
+      "weight": 0.526055
+    },
+    {
+      "abs_weight": 0.167764,
+      "name": "mut_clutter_blob_min_m",
+      "weight": 0.167764
+    },
+    {
+      "abs_weight": 0.489882,
+      "name": "mut_clutter_blob_span_m",
+      "weight": -0.489882
+    },
+    {
+      "abs_weight": 0.104488,
+      "name": "mut_density_enable",
+      "weight": 0.104488
+    },
+    {
+      "abs_weight": 0.300569,
+      "name": "mut_density_scale",
+      "weight": -0.300569
+    },
+    {
+      "abs_weight": 0.44688,
+      "name": "start_idx",
+      "weight": -0.44688
+    },
+    {
+      "abs_weight": 0.035497,
+      "name": "goal_idx",
+      "weight": -0.035497
+    },
+    {
+      "abs_weight": 1.478182,
+      "name": "fault0_enable",
+      "weight": 1.478182
+    },
+    {
+      "abs_weight": 0.126625,
+      "name": "fault0_type",
+      "weight": 0.126625
+    },
+    {
+      "abs_weight": 1.875257,
+      "name": "fault0_onset_s",
+      "weight": -1.875257
+    },
+    {
+      "abs_weight": 1.299834,
+      "name": "fault0_peak",
+      "weight": 1.299834
+    },
+    {
+      "abs_weight": 0.450412,
+      "name": "fault0_ramp_up_s",
+      "weight": -0.450412
+    },
+    {
+      "abs_weight": 0.423208,
+      "name": "fault0_hold_s",
+      "weight": -0.423208
+    },
+    {
+      "abs_weight": 0.235151,
+      "name": "fault0_magnitude",
+      "weight": -0.235151
+    },
+    {
+      "abs_weight": 1.074503,
+      "name": "fault1_enable",
+      "weight": -1.074503
+    },
+    {
+      "abs_weight": 0.713861,
+      "name": "fault1_type",
+      "weight": -0.713861
+    },
+    {
+      "abs_weight": 0.391851,
+      "name": "fault1_onset_s",
+      "weight": 0.391851
+    },
+    {
+      "abs_weight": 0.2226,
+      "name": "fault1_peak",
+      "weight": 0.2226
+    },
+    {
+      "abs_weight": 0.632827,
+      "name": "fault1_ramp_up_s",
+      "weight": -0.632827
+    },
+    {
+      "abs_weight": 0.288605,
+      "name": "fault1_hold_s",
+      "weight": 0.288605
+    },
+    {
+      "abs_weight": 0.206193,
+      "name": "fault1_magnitude",
+      "weight": -0.206193
+    },
+    {
+      "abs_weight": 0.284777,
+      "name": "fault2_enable",
+      "weight": -0.284777
+    },
+    {
+      "abs_weight": 0.699931,
+      "name": "fault2_type",
+      "weight": -0.699931
+    },
+    {
+      "abs_weight": 0.295795,
+      "name": "fault2_onset_s",
+      "weight": -0.295795
+    },
+    {
+      "abs_weight": 0.021932,
+      "name": "fault2_peak",
+      "weight": -0.021932
+    },
+    {
+      "abs_weight": 0.267036,
+      "name": "fault2_ramp_up_s",
+      "weight": -0.267036
+    },
+    {
+      "abs_weight": 0.26978,
+      "name": "fault2_hold_s",
+      "weight": 0.26978
+    },
+    {
+      "abs_weight": 0.276084,
+      "name": "fault2_magnitude",
+      "weight": 0.276084
+    }
+  ]
+}
