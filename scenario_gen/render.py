@@ -196,6 +196,26 @@ def _env_params(ftype: str, env_defaults: Dict[str, Any], tpl: Dict[str, Any]):
 
 
 # ----------------------------------------------------------------- world build
+def _decode_noise_context(tpl: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Build the world-level ``noise_context`` block from the template.
+
+    Calibrated, context-conditioned baseline noise (see
+    docs/noise_model_format.md) is opt-in: a template may declare
+    ``noise_context: {lighting: 0.8}`` to set the world ambient-lighting scalar
+    that every sensor/drive noise model conditions on. Absent -> ``None`` so the
+    rendered world omits the block entirely and the engine keeps its default
+    (lighting 1.0), preserving byte-identical legacy behavior and existing
+    reproducibility ledgers (no genome dimension is added).
+    """
+    nc = tpl.get("noise_context")
+    if not nc:
+        return None
+    out: Dict[str, Any] = {}
+    if "lighting" in nc:
+        out["lighting"] = float(nc["lighting"])
+    return out or None
+
+
 def build_world(g: Genome, tpl: Dict[str, Any], out_dir: str) -> Dict[str, Any]:
     """Assemble the world dict + render metadata (manifest paths, placement)."""
     g.clamp()
@@ -233,8 +253,17 @@ def build_world(g: Genome, tpl: Dict[str, Any], out_dir: str) -> Dict[str, Any]:
             "faults": faults,
         }],
     }
+
+    # Optional world-level sensing context for the calibrated noise models.
+    # Default-off so worlds without it are byte-identical to before.
+    noise_context = _decode_noise_context(tpl)
+    if noise_context is not None:
+        world["noise_context"] = noise_context
+
     meta = {
         "genome_hash": g.hash(),
+        "noise_model": tpl.get("noise_model", ""),
+        "noise_context": noise_context or {},
         "seed": int(g.seed),
         "difficulty": round(g.difficulty(), 4),
         "start_pose": start,
@@ -258,13 +287,29 @@ def _dump_yaml(obj: Dict[str, Any]) -> str:
 
 
 def render(g: Genome, template: str, out_dir: str,
-           validate_load: bool = False) -> Dict[str, Any]:
+           validate_load: bool = False,
+           noise_model: Optional[str] = None,
+           lighting: Optional[float] = None) -> Dict[str, Any]:
     """Render a genome to ``<out_dir>/world.yaml`` and write a sidecar.
 
     Returns the render metadata dict (also written to ``render_meta.json``).
+
+    ``noise_model`` / ``lighting`` optionally attach a calibrated,
+    context-conditioned baseline noise model (docs/noise_model_format.md) at
+    render time without editing the template: ``lighting`` sets the world
+    ambient-lighting scalar and ``noise_model`` is recorded in the render
+    metadata (the template's robot model references it from its sensor/drive
+    plugins). Both default to the template values / off, so existing renders are
+    unchanged and reproducibility ledgers stay valid (the genome is untouched).
     """
     os.makedirs(out_dir, exist_ok=True)
     tpl = load_template(template)
+    if noise_model is not None:
+        tpl = dict(tpl, noise_model=noise_model)
+    if lighting is not None:
+        nc = dict(tpl.get("noise_context") or {})
+        nc["lighting"] = float(lighting)
+        tpl = dict(tpl, noise_context=nc)
     built = build_world(g, tpl, out_dir)
     world_path = os.path.join(out_dir, "world.yaml")
     with open(world_path, "w") as f:

@@ -49,6 +49,7 @@
 #include <flatland_plugins/imu.h>
 #include <flatland_server/debug_visualization.h>
 #include <flatland_server/model_plugin.h>
+#include <flatland_server/noise_context.h>
 #include <flatland_server/random.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <pluginlib/class_list_macros.h>
@@ -81,6 +82,11 @@ void Imu::OnInitialize(const YAML::Node& config) {
   pub_rate_ =
       reader.Get<double>("pub_rate", std::numeric_limits<double>::infinity());
   update_timer_.SetRate(pub_rate_);
+
+  // Optional calibrated, context-conditioned baseline noise model. Empty path
+  // -> legacy constant per-channel std. See docs/noise_model_format.md.
+  std::string noise_model_path = reader.Get<std::string>("noise_model", "");
+  sensor_age_hours_ = reader.Get<double>("sensor_age_hours", 0.0);
 
   broadcast_tf_ = reader.Get<bool>("broadcast_tf", true);
 
@@ -143,6 +149,10 @@ void Imu::OnInitialize(const YAML::Node& config) {
 
   // Stable key the FaultInjectionRegistry uses to address this sensor.
   fault_key_ = ComponentKey(GetModel()->GetName(), GetName());
+
+  noise_model_ =
+      flatland_server::NoiseModel::LoadOrLegacy(noise_model_path, fault_key_);
+  use_noise_model_ = noise_model_ && !noise_model_->IsLegacy();
 
   for (int i = 0; i < 3; i++) {
     // variance is standard deviation squared
@@ -221,12 +231,34 @@ void Imu::AfterPhysicsStep(const Timekeeper& timekeeper) {
     // add the noise to odom messages
     imu_msg_.header.stamp = ros::Time::now();
 
-    // Baseline noisy readings (draw order preserved so a fault-free run is
-    // byte-for-byte identical to before).
-    double yaw = angle + noise_gen_[2](rng_);
-    double wz = ground_truth_msg_.angular_velocity.z + noise_gen_[5](rng_);
-    double ax = ground_truth_msg_.linear_acceleration.x + noise_gen_[6](rng_);
-    double ay = ground_truth_msg_.linear_acceleration.y + noise_gen_[7](rng_);
+    // Baseline noisy readings. Legacy mode keeps the exact draw order/objects
+    // so a fault-free run is byte-for-byte identical to before. With a
+    // calibrated model the per-channel noise is conditioned on the current
+    // context (surface/speed/lighting/age) and applied here, before the fault
+    // hooks below, so faults still layer on top of realistic baseline noise.
+    double n_yaw, n_wz, n_ax, n_ay;
+    if (use_noise_model_) {
+      flatland_server::NoiseContext ctx =
+          flatland_server::NoiseContextProvider::Get().Build(b2body,
+                                                             sensor_age_hours_);
+      n_yaw = noise_model_->Sample("orientation_z", ctx, rng_,
+                                   noise_gen_[2].stddev());
+      n_wz = noise_model_->Sample("angular_velocity_z", ctx, rng_,
+                                  noise_gen_[5].stddev());
+      n_ax = noise_model_->Sample("linear_acceleration_x", ctx, rng_,
+                                  noise_gen_[6].stddev());
+      n_ay = noise_model_->Sample("linear_acceleration_y", ctx, rng_,
+                                  noise_gen_[7].stddev());
+    } else {
+      n_yaw = noise_gen_[2](rng_);
+      n_wz = noise_gen_[5](rng_);
+      n_ax = noise_gen_[6](rng_);
+      n_ay = noise_gen_[7](rng_);
+    }
+    double yaw = angle + n_yaw;
+    double wz = ground_truth_msg_.angular_velocity.z + n_wz;
+    double ax = ground_truth_msg_.linear_acceleration.x + n_ax;
+    double ay = ground_truth_msg_.linear_acceleration.y + n_ay;
 
     // Fault perturbations: applied to the NORMAL in-band reading only, scaled
     // by severity. No active effect -> no change. The label is never set here.

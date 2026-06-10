@@ -273,6 +273,19 @@ class World : public b2ContactListener {
   }
 
   /**
+   * @brief Wire the process-wide NoiseContextProvider to this world.
+   *
+   * Sets the ambient lighting scalar from the optional world-YAML
+   * `noise_context` block (default 1.0) and installs a surface sampler that
+   * buckets GetSurfaceFrictionFactor() into a surface_id, so sensor/drive noise
+   * models can condition on the surface under the robot. A null reader leaves
+   * the provider at its defaults, so worlds without the block are unchanged.
+   *
+   * @param[in] reader YamlReader for the optional `noise_context` subnode.
+   */
+  void ConfigureNoiseContext(YamlReader& reader);
+
+  /**
    * @brief Publish debug visualizations for everything
    * @param[in] update_layers since layers are pretty much static, this
    * parameter is used to skip updating layers

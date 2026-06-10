@@ -51,6 +51,7 @@
 #include <flatland_plugins/tricycle_drive.h>
 #include <flatland_server/debug_visualization.h>
 #include <flatland_server/model_plugin.h>
+#include <flatland_server/noise_context.h>
 #include <flatland_server/random.h>
 #include <flatland_server/world.h>
 #include <flatland_server/yaml_reader.h>
@@ -98,6 +99,11 @@ void TricycleDrive::OnInitialize(const YAML::Node& config) {
       r.GetList<double>("odom_twist_noise", {0, 0, 0}, 3, 3);
   vector<double> odom_pose_noise =
       r.GetList<double>("odom_pose_noise", {0, 0, 0}, 3, 3);
+
+  // Optional calibrated, context-conditioned baseline odom noise model. Empty
+  // path -> legacy constant odom_*_noise std. See docs/noise_model_format.md.
+  std::string noise_model_path = r.Get<std::string>("noise_model", "");
+  sensor_age_hours_ = r.Get<double>("sensor_age_hours", 0.0);
 
   double pub_rate =
       r.Get<double>("pub_rate", numeric_limits<double>::infinity());
@@ -222,6 +228,10 @@ void TricycleDrive::OnInitialize(const YAML::Node& config) {
 
   // Stable key the FaultInjectionRegistry uses to address this drivetrain.
   fault_key_ = ComponentKey(GetModel()->GetName(), GetName());
+
+  noise_model_ =
+      flatland_server::NoiseModel::LoadOrLegacy(noise_model_path, fault_key_);
+  use_noise_model_ = noise_model_ && !noise_model_->IsLegacy();
 
   for (unsigned int i = 0; i < 3; i++) {
     // variance is standard deviation squared
@@ -426,19 +436,40 @@ void TricycleDrive::BeforePhysicsStep(const Timekeeper& timekeeper) {
     double report_y = odom_diverged_ ? odom_y_ : position.y;
     double report_yaw = odom_diverged_ ? odom_yaw_ : angle;
 
+    // Reported-odometry baseline noise. Each draw consumes exactly one RNG
+    // value (legacy mode keeps the static noise_gen_ objects, so a clean run is
+    // byte-for-byte identical); with a calibrated model the per-channel std is
+    // conditioned on surface/speed/age. This perturbs only the REPORTED odom,
+    // never the true Box2D motion. See docs/noise_model_format.md.
+    flatland_server::NoiseContext odom_ctx;
+    if (use_noise_model_) {
+      odom_ctx = flatland_server::NoiseContextProvider::Get().Build(
+          body_->GetPhysicsBody(), sensor_age_hours_);
+    }
+    auto odom_noise = [&](int i) -> double {
+      static const char* kCh[6] = {"odom_pose_x",  "odom_pose_y",
+                                   "odom_pose_yaw", "odom_twist_x",
+                                   "odom_twist_y",  "odom_twist_yaw"};
+      if (use_noise_model_) {
+        return noise_model_->Sample(kCh[i], odom_ctx, rng_,
+                                    noise_gen_[i].stddev());
+      }
+      return noise_gen_[i](rng_);
+    };
+
     // add the noise to odom messages
     odom_msg_.header.stamp = timekeeper.GetSimTime();
     odom_msg_.pose.pose = ground_truth_msg_.pose.pose;
     odom_msg_.twist.twist = ground_truth_msg_.twist.twist;
-    odom_msg_.pose.pose.position.x = report_x + noise_gen_[0](rng_);
-    odom_msg_.pose.pose.position.y = report_y + noise_gen_[1](rng_);
+    odom_msg_.pose.pose.position.x = report_x + odom_noise(0);
+    odom_msg_.pose.pose.position.y = report_y + odom_noise(1);
     odom_msg_.pose.pose.orientation =
-        tf::createQuaternionMsgFromYaw(report_yaw + noise_gen_[2](rng_));
+        tf::createQuaternionMsgFromYaw(report_yaw + odom_noise(2));
     odom_msg_.twist.twist.linear.x =
-        slip_factor * odom_msg_.twist.twist.linear.x + noise_gen_[3](rng_);
+        slip_factor * odom_msg_.twist.twist.linear.x + odom_noise(3);
     odom_msg_.twist.twist.linear.y =
-        slip_factor * odom_msg_.twist.twist.linear.y + noise_gen_[4](rng_);
-    odom_msg_.twist.twist.angular.z += noise_gen_[5](rng_);
+        slip_factor * odom_msg_.twist.twist.linear.y + odom_noise(4);
+    odom_msg_.twist.twist.angular.z += odom_noise(5);
 
     ground_truth_pub_.publish(ground_truth_msg_);
     odom_pub_.publish(odom_msg_);

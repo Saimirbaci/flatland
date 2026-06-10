@@ -47,6 +47,7 @@
 #include <Box2D/Box2D.h>
 #include <flatland_plugins/update_timer.h>
 #include <flatland_server/model_plugin.h>
+#include <flatland_server/noise_model.h>
 #include <flatland_server/timekeeper.h>
 #include <geometry_msgs/Twist.h>
 #include <random>
@@ -72,6 +73,12 @@ class Imu : public flatland_server::ModelPlugin {
 
   std::default_random_engine rng_;
   std::array<std::normal_distribution<double>, 9> noise_gen_;
+
+  /// Optional calibrated, context-conditioned baseline noise model. Legacy
+  /// (constant per-channel std) when no `noise_model` file is configured.
+  std::shared_ptr<flatland_server::NoiseModel> noise_model_;
+  double sensor_age_hours_ = 0.0;  ///< configured sensor age (noise context)
+  bool use_noise_model_ = false;   ///< true when a calibrated model is loaded
 
   std::string fault_key_;      ///< registry component key (model/plugin)
   double imu_drift_ = 0.0;     ///< accumulated sensor_drift offset

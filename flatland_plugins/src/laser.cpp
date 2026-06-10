@@ -49,6 +49,7 @@
 #include <flatland_server/collision_filter_registry.h>
 #include <flatland_server/exceptions.h>
 #include <flatland_server/model_plugin.h>
+#include <flatland_server/noise_context.h>
 #include <flatland_server/random.h>
 #include <flatland_server/yaml_reader.h>
 #include <geometry_msgs/TransformStamped.h>
@@ -150,6 +151,21 @@ void Laser::BeforePhysicsStep(const Timekeeper& timekeeper) {
   if (always_publish_ || scan_publisher_.getNumSubscribers() > 0) {
     // START_PROFILE(timekeeper, "compute laser range");
     auto start = std::chrono::steady_clock::now();
+
+    // Context-conditioned baseline noise: resolve this step's range noise from
+    // the calibrated model (surface/speed/lighting/age) and retune the per-ray
+    // generator before the ThreadPool workers run. Legacy mode leaves the
+    // constant noise_gen_ untouched, so a clean run is byte-for-byte identical.
+    if (use_noise_model_) {
+      flatland_server::NoiseContext ctx =
+          flatland_server::NoiseContextProvider::Get().Build(
+              body_->GetPhysicsBody(), sensor_age_hours_);
+      flatland_server::NoiseParams p =
+          noise_model_->GetParams("range", ctx, noise_std_dev_);
+      noise_gen_ = std::normal_distribution<float>(
+          static_cast<float>(p.mean), static_cast<float>(p.std));
+    }
+
     ComputeLaserRanges();
 
     ROS_INFO_THROTTLE_NAMED(
@@ -435,6 +451,11 @@ void Laser::ParseParameters(const YAML::Node& config) {
   range_ = reader.Get<double>("range");
   noise_std_dev_ = reader.Get<double>("noise_std_dev", 0);
 
+  // Optional calibrated, context-conditioned baseline noise model. Empty path
+  // -> legacy constant noise_std_dev_. See docs/noise_model_format.md.
+  std::string noise_model_path = reader.Get<std::string>("noise_model", "");
+  sensor_age_hours_ = reader.Get<double>("sensor_age_hours", 0.0);
+
   upside_down_ = reader.Get<bool>("upside_down", false);
 
   std::vector<std::string> layers =
@@ -488,6 +509,11 @@ void Laser::ParseParameters(const YAML::Node& config) {
 
   // Stable key the FaultInjectionRegistry uses to address this sensor.
   fault_key_ = ComponentKey(GetModel()->GetName(), GetName());
+
+  // Resolve the noise model relative to the model's directory when relative.
+  noise_model_ =
+      flatland_server::NoiseModel::LoadOrLegacy(noise_model_path, fault_key_);
+  use_noise_model_ = noise_model_ && !noise_model_->IsLegacy();
 
   ROS_INFO(  //"LaserPlugin",
       "Laser %s params: topic(%s) body(%s, %p) origin(%f,%f,%f) upside_down(%d)"

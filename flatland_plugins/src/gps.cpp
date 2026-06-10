@@ -1,5 +1,6 @@
 #include <flatland_plugins/fault_injection_registry.h>
 #include <flatland_plugins/gps.h>
+#include <flatland_server/noise_context.h>
 #include <flatland_server/random.h>
 #include <pluginlib/class_list_macros.h>
 
@@ -30,6 +31,17 @@ void Gps::BeforePhysicsStep(const Timekeeper &timekeeper) {
   // only compute and publish when the number of subscribers is not zero
   if (fix_publisher_.getNumSubscribers() > 0) {
     UpdateFix();
+
+    // Context-conditioned baseline noise applied to the clean fix BEFORE the
+    // fault hooks below, so faults layer on top of realistic baseline error.
+    // Legacy mode (no calibrated model) adds nothing.
+    if (use_noise_model_) {
+      flatland_server::NoiseContext ctx =
+          flatland_server::NoiseContextProvider::Get().Build(
+              body_->GetPhysicsBody(), sensor_age_hours_);
+      gps_fix_.latitude += noise_model_->Sample("gps_x", ctx, rng_, 0.0);
+      gps_fix_.longitude += noise_model_->Sample("gps_y", ctx, rng_, 0.0);
+    }
 
     // Fault perturbations applied to the NORMAL fix only, scaled by severity.
     // No active effect -> no change; the label is never written into the fix.
@@ -174,6 +186,12 @@ void Gps::ParseParameters(const YAML::Node &config) {
   ComputeReferenceEcef();
   origin_ = reader.GetPose("origin", Pose(0, 0, 0));
 
+  // Optional calibrated, context-conditioned baseline noise model. Empty path
+  // -> no baseline noise (GPS has no legacy baseline). See
+  // docs/noise_model_format.md.
+  std::string noise_model_path = reader.Get<std::string>("noise_model", "");
+  sensor_age_hours_ = reader.Get<double>("sensor_age_hours", 0.0);
+
   body_ = GetModel()->GetBody(body_name);
   if (!body_) {
     throw YAMLException("Cannot find body with name " + body_name);
@@ -183,6 +201,10 @@ void Gps::ParseParameters(const YAML::Node &config) {
   fault_key_ = ComponentKey(GetModel()->GetName(), GetName());
   rng_ = flatland_server::RngManager::Get().DeriveEngine(GetModel()->GetName() +
                                                          "/" + GetName());
+
+  noise_model_ =
+      flatland_server::NoiseModel::LoadOrLegacy(noise_model_path, fault_key_);
+  use_noise_model_ = noise_model_ && !noise_model_->IsLegacy();
 
   std::string parent_frame_id =
       tf::resolve("", GetModel()->NameSpaceTF(body_->GetName()));
