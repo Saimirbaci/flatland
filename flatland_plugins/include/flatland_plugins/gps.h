@@ -1,5 +1,6 @@
 #include <flatland_plugins/update_timer.h>
 #include <flatland_server/model_plugin.h>
+#include <flatland_server/noise_model.h>
 #include <flatland_server/timekeeper.h>
 #include <flatland_server/types.h>
 #include <ros/ros.h>
@@ -53,6 +54,12 @@ class Gps : public ModelPlugin {
 
   std::string fault_key_;           ///< registry component key (model/plugin)
   std::default_random_engine rng_;  ///< RNG for dropout / noise faults
+
+  /// Optional calibrated, context-conditioned baseline noise model. GPS has no
+  /// legacy baseline noise, so the legacy path adds nothing (fallback std 0).
+  std::shared_ptr<flatland_server::NoiseModel> noise_model_;
+  double sensor_age_hours_ = 0.0;  ///< configured sensor age (noise context)
+  bool use_noise_model_ = false;   ///< true when a calibrated model is loaded
 
   sensor_msgs::NavSatFix last_fix_;  ///< last fix, for the stuck/freeze fault
   bool last_fix_valid_ = false;      ///< whether last_fix_ holds a fix

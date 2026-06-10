@@ -47,6 +47,7 @@
 #include <Box2D/Box2D.h>
 #include <flatland_server/debug_visualization.h>
 #include <flatland_server/exceptions.h>
+#include <flatland_server/noise_context.h>
 #include <flatland_server/random.h>
 #include <flatland_server/types.h>
 #include <flatland_server/world.h>
@@ -228,9 +229,15 @@ World* World::MakeWorld(const std::string& yaml_path, int seed) {
     // worlds are unchanged.
     YamlReader surface_friction_reader =
         world_reader.SubnodeOpt("surface_friction", YamlReader::MAP);
+    // Optional world-level sensing context for the noise models. Absent -> the
+    // NoiseContextProvider keeps its defaults (lighting 1.0), so existing
+    // worlds are unchanged. See docs/noise_model_format.md.
+    YamlReader noise_context_reader =
+        world_reader.SubnodeOpt("noise_context", YamlReader::MAP);
     world_reader.EnsureAccessedAllKeys();
     w->surface_friction_ = SurfaceFrictionField::FromConfig(
         surface_friction_reader, w->world_yaml_dir_);
+    w->ConfigureNoiseContext(noise_context_reader);
     w->LoadLayers(layers_reader);
     w->LoadModels(models_reader);
     w->LoadWorldPlugins(world_plugin_reader, w, world_reader);
@@ -248,6 +255,26 @@ World* World::MakeWorld(const std::string& yaml_path, int seed) {
     throw e;
   }
   return w;
+}
+
+void World::ConfigureNoiseContext(YamlReader& reader) {
+  auto& provider = NoiseContextProvider::Get();
+  // Fresh defaults for this world (lighting 1.0, no surface sampler).
+  provider.Reset();
+
+  if (!reader.IsNodeNull()) {
+    double lighting = reader.Get<double>("lighting", 1.0);
+    reader.EnsureAccessedAllKeys();
+    provider.SetLighting(lighting);
+  }
+
+  // Bucket the world's surface friction field into a surface_id under the body.
+  // The closure captures `this`; the World owns the field and outlives every
+  // plugin, so the sampler stays valid for the run.
+  provider.SetSurfaceSampler([this](double x, double y) {
+    return GetSurfaceFrictionFactor(b2Vec2(static_cast<float>(x),
+                                           static_cast<float>(y)));
+  });
 }
 
 void World::LoadLayers(YamlReader& layers_reader) {

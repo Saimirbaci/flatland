@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "model_type": "parametric_linear",
+  "metadata": {
+    "fit_source": "synthetic",
+    "notes": "Small fixture for noise_model tests / example worlds. Channels cover a laser range and a diff_drive odom yaw."
+  },
+  "channels": {
+    "range": {
+      "base_std": 0.01,
+      "std_coef": { "speed": 0.05, "age": 0.001, "darkness": 0.02 },
+      "surface_std_offset": { "0": 0.0, "1": 0.01, "2": 0.03 },
+      "base_mean": 0.0
+    },
+    "odom_pose_yaw": {
+      "base_std": 0.005,
+      "std_coef": { "speed": 0.01 },
+      "surface_std_offset": { "0": 0.0, "1": 0.004, "2": 0.012 }
+    }
+  }
+}

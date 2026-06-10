@@ -46,6 +46,7 @@
 
 #include <flatland_plugins/update_timer.h>
 #include <flatland_server/model_plugin.h>
+#include <flatland_server/noise_model.h>
 #include <flatland_server/timekeeper.h>
 #include <flatland_server/types.h>
 #include <ros/ros.h>
@@ -97,6 +98,12 @@ class Laser : public ModelPlugin {
 
   std::default_random_engine rng_;             ///< random generator
   std::normal_distribution<float> noise_gen_;  ///< gaussian noise generator
+
+  /// Optional calibrated, context-conditioned baseline noise model. Legacy
+  /// (constant noise_std_dev_) when no `noise_model` file is configured.
+  std::shared_ptr<flatland_server::NoiseModel> noise_model_;
+  double sensor_age_hours_ = 0.0;  ///< configured sensor age (noise context)
+  bool use_noise_model_ = false;   ///< true when a calibrated model is loaded
 
   std::string fault_key_;           ///< registry component key (model/plugin)
   std::vector<float> last_ranges_;  ///< last published ranges, for stuck fault

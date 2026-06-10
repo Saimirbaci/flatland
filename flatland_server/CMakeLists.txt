@@ -112,6 +112,8 @@ add_library(flatland_lib
   src/yaml_preprocessor.cpp
   src/random.cpp
   src/scenario_scorer.cpp
+  src/noise_context.cpp
+  src/noise_model.cpp
 )
 
 add_dependencies(flatland_lib ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -317,6 +319,14 @@ if(CATKIN_ENABLE_TESTING)
   catkin_add_gtest(random_test test/random_test.cpp)
   target_link_libraries(random_test
     flatland_lib)
+
+  catkin_add_gtest(noise_context_test test/noise_context_test.cpp)
+  target_link_libraries(noise_context_test
+    flatland_lib)
+
+  catkin_add_gtest(noise_model_test test/noise_model_test.cpp)
+  target_link_libraries(noise_model_test
+    flatland_lib yaml-cpp)
 
   add_rostest_gtest(determinism_test
     test/determinism_test.test
