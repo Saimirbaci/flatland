@@ -1,0 +1,23 @@
+{
+  "seed": 42,
+  "genome_hash": "9c3334cba701",
+  "composite_score": 0.71,
+  "terminal": "timeout",
+  "invalid": false,
+  "metrics": {
+    "mean_localization_error_m": 0.42,
+    "max_localization_error_m": 1.85,
+    "collision_count": 4,
+    "goal_reached": false,
+    "goal_distance_m": 3.1,
+    "mean_tracking_error_m": 0.58,
+    "sim_time_s": 60.0,
+    "time_to_goal_s": -1.0
+  },
+  "weights": {
+    "localization_error": 1.0,
+    "collisions": 1.0,
+    "goal_failure": 1.0,
+    "tracking_error": 1.0
+  }
+}

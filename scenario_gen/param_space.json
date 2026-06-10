@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "description": "Scenario 'genome' parameter space for Flatland's AI-driven adversarial/curriculum generator. A genome is a fixed-length vector of named knobs an AI policy (RL or LLM) controls; render.py decodes it into a concrete Flatland world.yaml (layer mutation block + FaultInjector faults + model placement). Every knob is bounded and annotated with a difficulty_weight used by the curriculum controller. Keep ranges aligned to what MapMutator::FromConfig and FaultInjector::OnInitialize actually accept so rendered worlds always load.",
+  "n_fault_slots": 3,
+  "comment_dimensions": "Ordered list of scalar knobs forming the flat optimization vector. type: float|int|categorical|gate. gate is a float in [0,1] decoded as 'on' when >= 0.5 (lets continuous optimizers toggle structure). difficulty_weight in [0,1] is how strongly an active/large value contributes to the scalar difficulty descriptor (0 => irrelevant or easing).",
+  "dimensions": [
+    {"name": "mut_wall_jitter_enable", "type": "gate", "low": 0.0, "high": 1.0, "default": 0.0, "difficulty_weight": 0.4, "group": "map", "description": "Toggle bounded rigid wall jitter (shift/rotate the whole map within tolerance)."},
+    {"name": "mut_wall_translation_m", "type": "float", "low": 0.0, "high": 0.30, "default": 0.05, "difficulty_weight": 0.6, "group": "map", "description": "max_translation_m for wall_jitter (meters)."},
+    {"name": "mut_wall_rotation_deg", "type": "float", "low": 0.0, "high": 5.0, "default": 1.0, "difficulty_weight": 0.4, "group": "map", "description": "max_rotation_deg for wall_jitter (degrees)."},
+
+    {"name": "mut_aisle_enable", "type": "gate", "low": 0.0, "high": 1.0, "default": 0.0, "difficulty_weight": 0.8, "group": "map", "description": "Toggle morphological aisle widening/narrowing."},
+    {"name": "mut_aisle_delta_m", "type": "float", "low": -0.15, "high": 0.25, "default": 0.0, "difficulty_weight": 1.0, "group": "map", "description": "dilate_erode delta (meters). Positive narrows aisles (harder), negative widens (easier). Rendered as dilate_erode_range_m: [delta, delta]."},
+
+    {"name": "mut_clutter_enable", "type": "gate", "low": 0.0, "high": 1.0, "default": 0.0, "difficulty_weight": 0.7, "group": "map", "description": "Toggle clutter add/remove."},
+    {"name": "mut_clutter_add_min", "type": "int", "low": 0, "high": 10, "default": 0, "difficulty_weight": 0.7, "group": "map", "description": "Lower bound of add_count_range (blobs added in free space)."},
+    {"name": "mut_clutter_add_span", "type": "int", "low": 0, "high": 10, "default": 2, "difficulty_weight": 0.5, "group": "map", "description": "add_count_range upper bound = add_min + add_span."},
+    {"name": "mut_clutter_remove_fraction", "type": "float", "low": 0.0, "high": 1.0, "default": 0.0, "difficulty_weight": 0.2, "group": "map", "description": "Fraction of removable small components cleared (easing -> low weight)."},
+    {"name": "mut_clutter_blob_min_m", "type": "float", "low": 0.05, "high": 0.40, "default": 0.10, "difficulty_weight": 0.5, "group": "map", "description": "Lower bound of blob_size_m_range (blob radius, meters)."},
+    {"name": "mut_clutter_blob_span_m", "type": "float", "low": 0.0, "high": 0.40, "default": 0.10, "difficulty_weight": 0.4, "group": "map", "description": "blob_size_m_range upper bound = blob_min + blob_span."},
+
+    {"name": "mut_density_enable", "type": "gate", "low": 0.0, "high": 1.0, "default": 0.0, "difficulty_weight": 0.6, "group": "map", "description": "Toggle obstacle_density global scale on clutter activity."},
+    {"name": "mut_density_scale", "type": "float", "low": 0.5, "high": 3.0, "default": 1.0, "difficulty_weight": 0.7, "group": "map", "description": "obstacle_density target_scale (>1 multiplies clutter, <1 thins it)."},
+
+    {"name": "start_idx", "type": "categorical", "categories_ref": "template.start_candidates", "default": 0, "difficulty_weight": 0.0, "group": "placement", "description": "Index into the template's free-space start-pose candidates. Categorical-over-candidates keeps starts valid (never inside a wall)."},
+    {"name": "goal_idx", "type": "categorical", "categories_ref": "template.goal_candidates", "default": 0, "difficulty_weight": 0.5, "group": "placement", "description": "Index into the template's free-space goal candidates. Farther/harder goals carry higher difficulty via the template metric, not here."},
+
+    {"name": "fault0_enable", "type": "gate", "low": 0.0, "high": 1.0, "default": 0.0, "difficulty_weight": 1.0, "group": "fault", "slot": 0, "description": "Activate fault slot 0."},
+    {"name": "fault0_type", "type": "categorical", "categories_ref": "fault_types", "default": 0, "difficulty_weight": 0.0, "group": "fault", "slot": 0, "description": "Fault kind for slot 0 (see fault_types)."},
+    {"name": "fault0_onset_s", "type": "float", "low": 0.0, "high": 20.0, "default": 2.0, "difficulty_weight": 0.3, "group": "fault", "slot": 0, "description": "severity.onset_time (sim seconds). Earlier onset is generally harder."},
+    {"name": "fault0_peak", "type": "float", "low": 0.0, "high": 1.0, "default": 0.6, "difficulty_weight": 1.0, "group": "fault", "slot": 0, "description": "severity.peak in [0,1]."},
+    {"name": "fault0_ramp_up_s", "type": "float", "low": 0.0, "high": 5.0, "default": 1.0, "difficulty_weight": 0.2, "group": "fault", "slot": 0, "description": "severity.ramp_up seconds (abrupt onset is harder -> low weight on the value)."},
+    {"name": "fault0_hold_s", "type": "float", "low": 1.0, "high": 60.0, "default": 30.0, "difficulty_weight": 0.5, "group": "fault", "slot": 0, "description": "severity.hold seconds at peak."},
+    {"name": "fault0_magnitude", "type": "float", "low": 0.0, "high": 1.0, "default": 0.5, "difficulty_weight": 0.8, "group": "fault", "slot": 0, "description": "Generic [0,1] magnitude mapped to the fault type's primary param via fault_types[type].param * scale."},
+
+    {"name": "fault1_enable", "type": "gate", "low": 0.0, "high": 1.0, "default": 0.0, "difficulty_weight": 1.0, "group": "fault", "slot": 1, "description": "Activate fault slot 1."},
+    {"name": "fault1_type", "type": "categorical", "categories_ref": "fault_types", "default": 0, "difficulty_weight": 0.0, "group": "fault", "slot": 1, "description": "Fault kind for slot 1."},
+    {"name": "fault1_onset_s", "type": "float", "low": 0.0, "high": 20.0, "default": 5.0, "difficulty_weight": 0.3, "group": "fault", "slot": 1, "description": "severity.onset_time (sim seconds)."},
+    {"name": "fault1_peak", "type": "float", "low": 0.0, "high": 1.0, "default": 0.6, "difficulty_weight": 1.0, "group": "fault", "slot": 1, "description": "severity.peak in [0,1]."},
+    {"name": "fault1_ramp_up_s", "type": "float", "low": 0.0, "high": 5.0, "default": 1.0, "difficulty_weight": 0.2, "group": "fault", "slot": 1, "description": "severity.ramp_up seconds."},
+    {"name": "fault1_hold_s", "type": "float", "low": 1.0, "high": 60.0, "default": 30.0, "difficulty_weight": 0.5, "group": "fault", "slot": 1, "description": "severity.hold seconds at peak."},
+    {"name": "fault1_magnitude", "type": "float", "low": 0.0, "high": 1.0, "default": 0.5, "difficulty_weight": 0.8, "group": "fault", "slot": 1, "description": "Generic [0,1] magnitude for slot 1."},
+
+    {"name": "fault2_enable", "type": "gate", "low": 0.0, "high": 1.0, "default": 0.0, "difficulty_weight": 1.0, "group": "fault", "slot": 2, "description": "Activate fault slot 2."},
+    {"name": "fault2_type", "type": "categorical", "categories_ref": "fault_types", "default": 0, "difficulty_weight": 0.0, "group": "fault", "slot": 2, "description": "Fault kind for slot 2."},
+    {"name": "fault2_onset_s", "type": "float", "low": 0.0, "high": 20.0, "default": 8.0, "difficulty_weight": 0.3, "group": "fault", "slot": 2, "description": "severity.onset_time (sim seconds)."},
+    {"name": "fault2_peak", "type": "float", "low": 0.0, "high": 1.0, "default": 0.6, "difficulty_weight": 1.0, "group": "fault", "slot": 2, "description": "severity.peak in [0,1]."},
+    {"name": "fault2_ramp_up_s", "type": "float", "low": 0.0, "high": 5.0, "default": 1.0, "difficulty_weight": 0.2, "group": "fault", "slot": 2, "description": "severity.ramp_up seconds."},
+    {"name": "fault2_hold_s", "type": "float", "low": 1.0, "high": 60.0, "default": 30.0, "difficulty_weight": 0.5, "group": "fault", "slot": 2, "description": "severity.hold seconds at peak."},
+    {"name": "fault2_magnitude", "type": "float", "low": 0.0, "high": 1.0, "default": 0.5, "difficulty_weight": 0.8, "group": "fault", "slot": 2, "description": "Generic [0,1] magnitude for slot 2."}
+  ],
+
+  "comment_fault_types": "The categorical alphabet for fault{i}_type. Each entry maps a taxonomy 'type' (as parsed by FaultInjector::ParseFaultKind) to a default target component+topic (so the genome never has to pick an invalid model/component combo) and to the primary numeric param fed by fault{i}_magnitude. 'param' is the params: key; 'scale' multiplies the [0,1] magnitude into that param's natural range. environment kinds set 'environment': true and are rendered with template-supplied spawn data.",
+  "fault_types": [
+    {"type": "sensor_bias",            "component": "laser_front", "topic": "scan",            "param": "bias",         "scale": 1.0},
+    {"type": "sensor_drift",           "component": "laser_front", "topic": "scan",            "param": "drift_rate",   "scale": 0.5},
+    {"type": "sensor_scale",           "component": "laser_front", "topic": "scan",            "param": "scale",        "scale": 0.5},
+    {"type": "noise_inflation",        "component": "laser_front", "topic": "scan",            "param": "stddev",       "scale": 0.5},
+    {"type": "dropout",                "component": "laser_front", "topic": "scan",            "param": "probability",  "scale": 1.0},
+    {"type": "stuck",                  "component": "laser_front", "topic": "scan",            "param": "probability",  "scale": 1.0},
+    {"type": "laser_sector_occlusion", "component": "laser_front", "topic": "scan",            "param": "fraction",     "scale": 1.0},
+    {"type": "latency",                "component": "laser_front", "topic": "scan",            "param": "latency",      "scale": 0.5},
+    {"type": "ghost_return",           "component": "laser_front", "topic": "scan",            "param": "probability",  "scale": 1.0},
+    {"type": "torque_loss",            "component": "diff_drive",  "topic": "odom",            "param": "loss",         "scale": 1.0},
+    {"type": "wheel_slip",             "component": "diff_drive",  "topic": "odom",            "param": "slip",         "scale": 1.0},
+    {"type": "asymmetric_drive",       "component": "diff_drive",  "topic": "odom",            "param": "imbalance",    "scale": 1.0},
+    {"type": "deadband",               "component": "diff_drive",  "topic": "odom",            "param": "deadband",     "scale": 0.5},
+    {"type": "motor_degradation",      "component": "diff_drive",  "topic": "odom",            "param": "degradation",  "scale": 1.0},
+    {"type": "encoder_drift",          "component": "diff_drive",  "topic": "odom",            "param": "drift_rate",   "scale": 0.3},
+    {"type": "odom_slip",              "component": "diff_drive",  "topic": "odom",            "param": "slip",         "scale": 1.0},
+    {"type": "amcl_divergence",        "component": "localization","topic": "amcl_pose",       "param": "divergence",   "scale": 2.0},
+    {"type": "dynamic_obstacle",       "component": "world",       "topic": "",                "param": "",             "scale": 0.0, "environment": true},
+    {"type": "spill",                  "component": "world",       "topic": "",                "param": "",             "scale": 0.0, "environment": true}
+  ]
+}

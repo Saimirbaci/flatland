@@ -1,0 +1,43 @@
+{
+  "name": "conestogo",
+  "description": "Office map from flatland_server/test/conestogo_office_test, with a tricycle-drive + front laser robot. Asset paths are relative to this template directory and resolved to absolute paths by render.py so the rendered world.yaml is location-independent.",
+  "map": "../../../flatland_server/test/conestogo_office_test/map.yaml",
+  "robot_model": "../../../flatland_server/test/conestogo_office_test/cleaner.model.yaml",
+  "robot_name": "robot",
+  "global_frame": "map",
+  "robot_base_frame": "robot_base",
+  "comment_candidates": "Free-space [x, y, yaw] start poses and [x, y] goals. Categorical-over-candidates keeps placement valid. Goal difficulty (distance) is captured by the run, not the genome.",
+  "start_candidates": [
+    [12.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0],
+    [2.0, 0.0, 1.5707963]
+  ],
+  "goal_candidates": [
+    [0.0, 0.0],
+    [6.0, 0.0],
+    [12.0, 0.0],
+    [2.0, 4.0]
+  ],
+  "comment_component_overrides": "Map a fault taxonomy type to the actual plugin name in THIS template's robot model (cleaner.model.yaml names its drive 'cleaner_drive' and laser 'laser_front'). Faults whose type is not listed keep the param_space default component.",
+  "component_overrides": {
+    "torque_loss": "cleaner_drive",
+    "wheel_slip": "cleaner_drive",
+    "asymmetric_drive": "cleaner_drive",
+    "deadband": "cleaner_drive",
+    "motor_degradation": "cleaner_drive",
+    "encoder_drift": "cleaner_drive",
+    "odom_slip": "cleaner_drive"
+  },
+  "env_defaults": {
+    "dynamic_obstacle": {
+      "model": "../../../flatland_server/test/conestogo_office_test/walker.model.yaml",
+      "speed": 0.3,
+      "despawn_on_end": 1,
+      "waypoints": [[6.0, 1.0], [6.0, -1.0]]
+    },
+    "spill": {
+      "radius": 2.0,
+      "mu_min": 0.1
+    }
+  }
+}

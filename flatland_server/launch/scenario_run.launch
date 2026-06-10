@@ -1,0 +1,78 @@
+<launch>
+  <!--
+  Headless single-scenario evaluation for the AI scenario generator.
+  Launches the simulator + the scenario observer/scorer. The algorithm-under-test
+  is launched separately by scenario_gen/run.py (kept AUT-agnostic here).
+
+  The observer node is `required` so when the scenario terminates (goal reached
+  or sim-time timeout) roslaunch tears the whole graph down.
+  See docs/scenario_generator.md.
+  -->
+  <arg name="world_path"/>
+  <arg name="result_path"        default="/tmp/scenario_result.json"/>
+  <arg name="genome_hash"        default=""/>
+  <arg name="seed"               default="-1"/>
+
+  <arg name="update_rate"        default="200.0"/>
+  <arg name="step_size"          default="0.005"/>
+  <arg name="real_time_factor"   default="0.0"/>   <!-- 0 = unthrottled (fast); set 1.0 for a real-time AUT -->
+  <arg name="show_viz"           default="false"/>
+  <arg name="simplify_map"       default="2"/>
+
+  <arg name="scenario_duration"  default="60.0"/>
+  <arg name="wall_timeout"       default="300.0"/>
+  <arg name="sample_rate"        default="50.0"/>
+
+  <arg name="global_frame"       default="map"/>
+  <arg name="robot_base_frame"   default="robot_base"/>
+  <arg name="est_pose_topic"     default="robot/amcl_pose"/>
+  <arg name="collisions_topic"   default="robot/collisions"/>
+
+  <arg name="start_x"            default="0.0"/>
+  <arg name="start_y"            default="0.0"/>
+  <arg name="goal_x"             default="0.0"/>
+  <arg name="goal_y"             default="0.0"/>
+  <arg name="goal_radius"        default="0.5"/>
+
+  <arg name="w_localization"     default="1.0"/>
+  <arg name="w_collisions"       default="1.0"/>
+  <arg name="w_goal"             default="1.0"/>
+  <arg name="w_tracking"         default="1.0"/>
+
+  <param name="use_sim_time" value="true"/>
+
+  <!-- Simulator (steps physics, publishes /clock, /tf, collisions). -->
+  <node name="flatland_server" pkg="flatland_server" type="flatland_server" output="screen">
+    <param name="world_path"        value="$(arg world_path)"/>
+    <param name="update_rate"       value="$(arg update_rate)"/>
+    <param name="step_size"         value="$(arg step_size)"/>
+    <param name="real_time_factor"  value="$(arg real_time_factor)"/>
+    <param name="show_viz"          value="$(arg show_viz)"/>
+    <param name="simplify_map"      value="$(arg simplify_map)"/>
+    <param name="seed"              value="$(arg seed)"/>
+  </node>
+
+  <!-- Observer / scorer. Required: its exit ends the run. -->
+  <node name="flatland_scenario_runner" pkg="flatland_server"
+        type="flatland_scenario_runner" output="screen" required="true">
+    <param name="result_path"       value="$(arg result_path)"/>
+    <param name="genome_hash"       value="$(arg genome_hash)"/>
+    <param name="seed"              value="$(arg seed)"/>
+    <param name="scenario_duration" value="$(arg scenario_duration)"/>
+    <param name="wall_timeout"      value="$(arg wall_timeout)"/>
+    <param name="sample_rate"       value="$(arg sample_rate)"/>
+    <param name="global_frame"      value="$(arg global_frame)"/>
+    <param name="robot_base_frame"  value="$(arg robot_base_frame)"/>
+    <param name="est_pose_topic"    value="$(arg est_pose_topic)"/>
+    <param name="collisions_topic"  value="$(arg collisions_topic)"/>
+    <param name="start_x"           value="$(arg start_x)"/>
+    <param name="start_y"           value="$(arg start_y)"/>
+    <param name="goal_x"            value="$(arg goal_x)"/>
+    <param name="goal_y"            value="$(arg goal_y)"/>
+    <param name="goal_radius"       value="$(arg goal_radius)"/>
+    <param name="w_localization"    value="$(arg w_localization)"/>
+    <param name="w_collisions"      value="$(arg w_collisions)"/>
+    <param name="w_goal"            value="$(arg w_goal)"/>
+    <param name="w_tracking"        value="$(arg w_tracking)"/>
+  </node>
+</launch>
