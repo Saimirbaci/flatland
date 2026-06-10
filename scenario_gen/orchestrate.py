@@ -27,6 +27,7 @@ from .genome import Genome, load_param_space
 from .curriculum import CurriculumController
 from .proposers import make_proposer
 from . import run as run_mod
+from . import failure_boundary as fb_mod
 
 
 class RunLedger:
@@ -79,16 +80,20 @@ def run_curriculum(template: str = "conestogo", proposer_strategy: str = "rl",
                    weights: Optional[Dict[str, float]] = None,
                    scenario_duration: float = 60.0, real_time_factor: float = 0.0,
                    stub: bool = False, llm_model: Optional[str] = None,
+                   fail_threshold: float = 0.6,
                    resume: bool = True) -> Dict[str, Any]:
     """Run the adversarial/curriculum loop. Returns a summary dict."""
     ps = load_param_space()
     weights = weights or _weights_from_arg(None)
     ledger = RunLedger(ledger_dir)
     ckpt = os.path.join(ledger_dir, "curriculum_state.json")
+    dr_ckpt = os.path.join(ledger_dir, "dr_distribution.json")
 
     prop_kwargs = {}
     if llm_model and proposer_strategy in ("llm", "hybrid"):
         prop_kwargs["model"] = llm_model
+    if proposer_strategy == "dr":
+        prop_kwargs["fail_threshold"] = fail_threshold
     proposer = make_proposer(proposer_strategy, ps, seed=base_seed, **prop_kwargs)
     curriculum = CurriculumController(target_success=target_success, seed=base_seed)
 
@@ -106,7 +111,8 @@ def run_curriculum(template: str = "conestogo", proposer_strategy: str = "rl",
                 g = Genome.from_dict(rec["genome"], ps)
                 proposer.update(g, rec["score"])
                 history.append({"genome": rec["genome"], "genome_hash": rec["genome_hash"],
-                                "score": rec["score"], "terminal": rec.get("terminal", "")})
+                                "score": rec["score"], "terminal": rec.get("terminal", ""),
+                                "invalid": bool(rec.get("invalid", False))})
             scenario_counter = len(prior)
             start_gen = max((rec.get("generation", 0) for rec in prior), default=-1) + 1
             print("Resumed: %d prior scenarios, continuing at generation %d"
@@ -155,11 +161,17 @@ def run_curriculum(template: str = "conestogo", proposer_strategy: str = "rl",
             }
             ledger.append(record)
             history.append({"genome": g.to_dict(), "genome_hash": g.hash(),
-                            "score": score, "terminal": result.get("terminal", "")})
+                            "score": score, "terminal": result.get("terminal", ""),
+                            "invalid": bool(result.get("invalid", False))})
             batch_scores.append(score)
             scenario_counter += 1
 
         curriculum.save(ckpt)
+        # Persist the DR distribution checkpoint alongside curriculum state so a
+        # run is inspectable mid-flight (resume itself replays the ledger).
+        if hasattr(proposer, "dist"):
+            with open(dr_ckpt, "w") as f:
+                json.dump(proposer.dist.to_dict(), f, indent=2, sort_keys=True)
         mean = sum(batch_scores) / len(batch_scores) if batch_scores else 0.0
         gen_scores.append(mean)
         print("gen %03d: mean_stress=%.3f target_diff=%.2f success_rate=%s archive=%d"
@@ -168,6 +180,11 @@ def run_curriculum(template: str = "conestogo", proposer_strategy: str = "rl",
                   if curriculum.recent_success_rate() is not None else "n/a"),
                  len(curriculum.archive)))
 
+    # --- estimate + report the AUT's failure boundary from the full history ---
+    boundary = fb_mod.estimate_boundary(history, fail_threshold=fail_threshold,
+                                        param_space=ps)
+    boundary_paths = fb_mod.write_report(boundary, ledger_dir)
+
     return {
         "generations": generations, "scenarios": scenario_counter,
         "gen_mean_scores": gen_scores,
@@ -175,13 +192,20 @@ def run_curriculum(template: str = "conestogo", proposer_strategy: str = "rl",
         "archive_size": len(curriculum.archive),
         "frontier": curriculum.frontier()[:10],
         "ledger": ledger.path,
+        "fail_threshold": fail_threshold,
+        "failure_boundary_report": boundary_paths["json"],
+        "failure_boundary_markdown": boundary_paths["markdown"],
+        "n_failures": boundary["n_failures"],
+        "fail_rate": boundary["fail_rate"],
+        "top_failure_dimensions": boundary["ranked_dimensions"][:5],
     }
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="AI adversarial/curriculum scenario loop")
     ap.add_argument("--template", default="conestogo")
-    ap.add_argument("--proposer", default="rl", choices=["random", "rl", "llm", "hybrid"])
+    ap.add_argument("--proposer", default="rl",
+                    choices=["random", "rl", "llm", "hybrid", "dr"])
     ap.add_argument("--aut", default=None, help="algorithm-under-test launch cmd")
     ap.add_argument("--generations", type=int, default=10)
     ap.add_argument("--per-generation", type=int, default=5)
@@ -193,6 +217,9 @@ def main(argv=None):
     ap.add_argument("--duration", type=float, default=60.0)
     ap.add_argument("--rtf", type=float, default=0.0)
     ap.add_argument("--llm-model", default=None)
+    ap.add_argument("--fail-threshold", type=float, default=0.6,
+                    help="composite-score fail criterion for the boundary report "
+                         "(and the DR proposer's failure-region target)")
     ap.add_argument("--stub", action="store_true", help="offline stub evaluator")
     ap.add_argument("--no-resume", action="store_true")
     args = ap.parse_args(argv)
@@ -205,7 +232,7 @@ def main(argv=None):
         base_seed=args.seed, aut_cmd=args.aut,
         weights=_weights_from_arg(args.weights), scenario_duration=args.duration,
         real_time_factor=args.rtf, stub=args.stub, llm_model=args.llm_model,
-        resume=not args.no_resume)
+        fail_threshold=args.fail_threshold, resume=not args.no_resume)
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 

@@ -57,11 +57,14 @@ class Proposer(abc.ABC):
 
 def make_proposer(strategy: str, param_space: Dict[str, Any], seed: int = 0,
                   **kwargs) -> Proposer:
-    """Factory: ``strategy in {"random", "rl", "llm", "hybrid"}``."""
+    """Factory: ``strategy in {"random", "rl", "llm", "hybrid", "dr"}``."""
     strategy = (strategy or "rl").lower()
     if strategy == "random":
         from .rl_proposer import RandomProposer
         return RandomProposer(param_space, seed=seed, **kwargs)
+    if strategy == "dr":
+        from .dr_proposer import DomainRandomizationProposer
+        return DomainRandomizationProposer(param_space, seed=seed, **kwargs)
     if strategy == "rl":
         from .rl_proposer import RLProposer
         return RLProposer(param_space, seed=seed, **kwargs)
