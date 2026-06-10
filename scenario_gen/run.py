@@ -22,6 +22,7 @@ import os
 import shutil
 import signal
 import subprocess
+import tempfile
 import time
 from typing import Any, Dict, List, Optional
 
@@ -107,7 +108,15 @@ def evaluate(g: Genome, template: str = "conestogo",
     if stub or shutil.which("roslaunch") is None:
         return stub_score(g)
 
-    out_dir = out_dir or os.path.join("/tmp/scenario_gen", g.hash())
+    if out_dir is None:
+        # Default scratch dir under the user's private tmp tree. Use a 0700
+        # per-user base so a co-tenant on a shared host can't pre-create or
+        # symlink the predictable <genome_hash> path to clobber/redirect our
+        # world.yaml / scenario_result.json writes.
+        base = os.path.join(tempfile.gettempdir(),
+                            "scenario_gen-%d" % os.getuid())
+        os.makedirs(base, mode=0o700, exist_ok=True)
+        out_dir = os.path.join(base, g.hash())
     os.makedirs(out_dir, exist_ok=True)
     meta = render_mod.render(g, template, out_dir)
     world_path = meta["world_path"]

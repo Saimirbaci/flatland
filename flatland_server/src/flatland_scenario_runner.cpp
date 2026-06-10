@@ -60,6 +60,7 @@
 #include <tf2_ros/transform_listener.h>
 
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <string>
 
@@ -80,8 +81,33 @@ void EstPoseCb(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr &msg) {
 std::string JsonEscape(const std::string &s) {
   std::string out;
   for (char c : s) {
-    if (c == '"' || c == '\\') out += '\\';
-    out += c;
+    switch (c) {
+      case '"':
+        out += "\\\"";
+        break;
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
+      default:
+        if (static_cast<unsigned char>(c) < 0x20) {
+          // Other control characters -> \u00XX so output stays valid JSON.
+          char buf[7];
+          snprintf(buf, sizeof(buf), "\\u%04x", c);
+          out += buf;
+        } else {
+          out += c;
+        }
+        break;
+    }
   }
   return out;
 }
