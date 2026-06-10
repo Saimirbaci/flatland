@@ -15,6 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
   tf2
+  tf2_ros
   tf2_geometry_msgs
   geometry_msgs
   visualization_msgs
@@ -63,7 +64,7 @@ endif()
 catkin_package(
   INCLUDE_DIRS include thirdparty
   LIBRARIES flatland_lib flatland_Box2D
-  CATKIN_DEPENDS pluginlib roscpp std_msgs tf2 visualization_msgs nav_msgs tf2_geometry_msgs geometry_msgs
+  CATKIN_DEPENDS pluginlib roscpp std_msgs tf2 tf2_ros visualization_msgs nav_msgs tf2_geometry_msgs geometry_msgs
   DEPENDS OpenCV YAML_CPP
 )
 
@@ -110,6 +111,7 @@ add_library(flatland_lib
   src/dummy_world_plugin.cpp
   src/yaml_preprocessor.cpp
   src/random.cpp
+  src/scenario_scorer.cpp
 )
 
 add_dependencies(flatland_lib ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -150,6 +152,21 @@ add_dependencies(flatland_benchmark ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(flatland_benchmark
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+  ${Boost_LIBRARIES}
+  ${LUA_LIBRARIES}
+  Threads::Threads
+  flatland_Box2D
+  yaml-cpp
+  flatland_lib
+)
+
+## Add scenario runner: headless observer that scores an algorithm-under-test
+## run for the AI scenario generator (see docs/scenario_generator.md).
+add_executable(flatland_scenario_runner src/flatland_scenario_runner.cpp)
+add_dependencies(flatland_scenario_runner ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(flatland_scenario_runner
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
   ${Boost_LIBRARIES}
@@ -247,6 +264,17 @@ if(CATKIN_ENABLE_TESTING)
   catkin_add_gtest(collision_filter_registry_test
     test/collision_filter_registry_test.cpp)
   target_link_libraries(collision_filter_registry_test
+    flatland_lib)
+
+  catkin_add_gtest(scenario_scorer_test
+    test/scenario_scorer_test.cpp)
+  target_link_libraries(scenario_scorer_test
+    flatland_lib)
+
+  add_rostest_gtest(scenario_runner_test
+    test/scenario_runner_test.test
+    test/scenario_runner_test.cpp)
+  target_link_libraries(scenario_runner_test
     flatland_lib)
 
   add_rostest_gtest(plugin_manager_test

@@ -1,0 +1,17 @@
+# Integration-test world for the AI scenario generator's observer/scorer.
+# A single robot named "robot" (the conestogo tricycle+laser model, which runs
+# ModelTfPublisher with publish_tf_world so it broadcasts map->robot_base). With
+# no cmd_vel publisher the robot stays put, so the scenario reaches its timeout
+# without reaching the goal -- a deterministic terminal condition for the test.
+properties:
+  seed: 7
+
+layers:
+  - name: "2d"
+    map: "../conestogo_office_test/map.yaml"
+    color: [0, 1, 0, 1]
+
+models:
+  - name: robot
+    pose: [12, 0, 0]
+    model: "../conestogo_office_test/cleaner.model.yaml"

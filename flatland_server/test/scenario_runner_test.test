@@ -1,0 +1,47 @@
+<!--
+Integration test for flatland_scenario_runner (the AI scenario generator's
+headless observer/scorer). Launches the simulator on a small world (a single
+"robot" model that broadcasts map->robot_base) plus the runner with a short
+scenario duration, then a gtest node waits for scenario_result.json and asserts
+the sealed stress-score output is well formed.
+
+The runner is NOT `required` here so it can write+exit while the test node keeps
+running long enough to read and assert on the result.
+-->
+<launch>
+  <param name="use_sim_time" value="true"/>
+
+  <node name="flatland_server" pkg="flatland_server" type="flatland_server" output="screen">
+    <param name="world_path"       value="$(find flatland_server)/test/scenario_gen_tests/world.yaml"/>
+    <param name="update_rate"      value="200.0"/>
+    <param name="step_size"        value="0.005"/>
+    <param name="real_time_factor" value="0.0"/>
+    <param name="show_viz"         value="false"/>
+    <param name="simplify_map"     value="2"/>
+    <param name="seed"             value="7"/>
+  </node>
+
+  <node name="flatland_scenario_runner" pkg="flatland_server"
+        type="flatland_scenario_runner" output="screen">
+    <param name="result_path"       value="/tmp/flatland_scenario_runner_test_result.json"/>
+    <param name="genome_hash"       value="testhash"/>
+    <param name="seed"              value="7"/>
+    <param name="scenario_duration" value="3.0"/>
+    <param name="wall_timeout"      value="120.0"/>
+    <param name="sample_rate"       value="50.0"/>
+    <param name="global_frame"      value="map"/>
+    <param name="robot_base_frame"  value="robot_base"/>
+    <param name="est_pose_topic"    value="robot/amcl_pose"/>
+    <param name="collisions_topic"  value="robot/collisions"/>
+    <param name="start_x"           value="12.0"/>
+    <param name="start_y"           value="0.0"/>
+    <param name="goal_x"            value="-20.0"/>
+    <param name="goal_y"            value="0.0"/>
+    <param name="goal_radius"       value="0.5"/>
+  </node>
+
+  <test pkg="flatland_server" type="scenario_runner_test"
+        test-name="scenario_runner_test" time-limit="120.0">
+    <param name="result_path" value="/tmp/flatland_scenario_runner_test_result.json"/>
+  </test>
+</launch>
