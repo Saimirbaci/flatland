@@ -40,6 +40,17 @@ fixed-timestep clock. Everything physical is planar: meters + radians, x / y / y
 - When the CoG moves, shift inertia with the parallel-axis theorem (`I_origin = I_com + m·|c|²`).
   `flatland_plugins/src/variable_payload.cpp` is the worked example (draining payload mass + CoG).
 
+## Rebuilding fixtures at runtime
+- To swap a body's fixtures mid-run (e.g. a layer's collision geometry changing during an episode),
+  destroy each `b2Fixture` with `b2Body::DestroyFixture` and re-add — but **only between physics
+  steps** (a world plugin's `BeforePhysicsStep`), never inside `BeginContact`/`EndContact`/`PreSolve`/
+  `PostSolve`: destroying a fixture mid-solve corrupts the contact graph. `DestroyFixture` unlinks the
+  fixture from the body's intrusive list, so cache `GetNext()` before destroying.
+- `Layer::RebuildCollisionFromBitmap` (`layer.cpp`) is the worked example — it rebuilds a static
+  layer's chain-loop fixtures in place without recreating the `Body`/`Layer`, so cached `Body*` and
+  debug-viz handles stay valid. Consumed by the `DynamicMap` world plugin; see the
+  `flatland-map-layers` skill.
+
 ## Geometry / transforms
 - `geometry.cpp` (`geometry.h`) has the pose/transform helpers. Keep tf frame ids consistent with
   the model config.
