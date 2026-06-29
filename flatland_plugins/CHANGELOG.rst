@@ -4,6 +4,21 @@ Changelog for package flatland_plugins
 
 Forthcoming
 -----------
+* New ``DynamicMap`` world plugin for mid-episode dynamic map changes — the
+  static environment itself evolves within a run (a shelf moves, a corridor
+  closes) to test mapping/localization robustness to non-static worlds. It
+  parses an ordered ``events`` list keyed to a ``target_layer`` and, on each
+  event's sim-time trigger, read-modify-writes that layer's occupancy bitmap in
+  world-metric coordinates (``fill`` = obstacle appears / corridor closes,
+  ``clear`` = corridor opens, ``translate`` = a rectangular obstacle moves), then
+  atomically rebuilds the layer's Box2D chain-loop geometry and re-publishes the
+  latched occupancy overlay. Geometry is swapped only in ``BeforePhysicsStep``
+  (between steps, never in a contact callback) and only on the fire edge, so
+  there is no per-step cost once events have fired. The applied timeline is
+  sealed out-of-band to a JSON manifest (run seed plus each op with its resolved
+  sim onset time and world/pixel region) for ground truth. Backed by a new
+  ``flatland_server::Layer::RebuildCollisionFromBitmap`` runtime-rebuild API and
+  ``flatland_server::World::GetLayer`` lookup. See ``doc/dynamic_map.md``.
 * New ``TrajectoryRecorder`` model plugin for the diagnostic overlays. It
   accumulates a body's actual pose each step into a length-capped
   ``nav_msgs/Path`` (``trajectory/actual``) read straight from the Box2D

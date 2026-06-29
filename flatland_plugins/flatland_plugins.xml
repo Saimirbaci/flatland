@@ -41,4 +41,7 @@
   <class type="flatland_plugins::LocalizationFault" base_class_type="flatland_server::ModelPlugin">
     <description>Synthetic AMCL pose estimate + map-&gt;odom tf with injectable localization divergence</description>
   </class>
+  <class type="flatland_plugins::DynamicMap" base_class_type="flatland_server::WorldPlugin">
+    <description>Scripted mid-episode static-map geometry changes (shelf moves, corridor closes) with a sealed manifest</description>
+  </class>
 </library>
