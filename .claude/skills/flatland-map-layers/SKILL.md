@@ -1,6 +1,6 @@
 ---
 name: flatland-map-layers
-description: Understand Flatland's map/layer loading — turning an occupancy image into Box2D collision geometry via OpenCV findContours + simplify_map → chain loops, plus the procedural map-mutation engine. Invoke for map loading, layer config, the simplify_map performance path, or deterministically perturbing/mutating a layer's occupancy map at load time.
+description: Understand Flatland's map/layer loading — turning an occupancy image into Box2D collision geometry via OpenCV findContours + simplify_map → chain loops, plus the procedural map-mutation engine and runtime mid-episode geometry rebuild. Invoke for map loading, layer config, the simplify_map performance path, deterministically perturbing/mutating a layer's occupancy map at load time, or changing a layer's collision geometry mid-episode (the DynamicMap world plugin).
 ---
 
 # Map layers → Box2D collision geometry
@@ -56,6 +56,37 @@ byte-for-byte as before** — the default `MutationConfig{}` is a no-op clone.
 - **Full schema + worked example:** `flatland_server/doc/map_mutation.md`. Tests:
   `test/map_mutator_test.cpp` (pure gtest) + `test/map_mutator_integration_test.{cpp,test}` (rostest,
   worlds under `test/map_mutator_tests/`).
+
+## Runtime mid-episode mutation (vs. the load-time mutator above)
+The `MapMutator` block perturbs the bitmap **once, at load**. To change a layer's geometry *during* a
+run (a shelf moves, a corridor closes — testing mapping/localization against a non-static world), use
+the runtime rebuild path instead:
+
+- **`Layer::RebuildCollisionFromBitmap(bitmap, occupied_thresh, resolution)`** (`layer.cpp` /
+  `layer.h`) — atomically swaps an image-based layer's collision geometry **in place**, without
+  recreating the `Body` or `Layer`, so World ownership, the layer name maps, and any cached `Body*` /
+  debug-viz handle stay valid. It destroys every fixture on the static body, re-runs the
+  `findContours → simplify → b2ChainShape` pipeline (`LoadFromBitmap`) against the new bitmap,
+  rebuilds the cached `OccupancyGrid` (`BuildOccupancyGrid`) using the **stored** layer origin, and
+  caches the new bitmap. **MUST be called only between physics steps** (e.g. a world plugin's
+  `BeforePhysicsStep`), never inside a Box2D contact callback — destroying fixtures mid-solve is
+  unsafe. See the `flatland-physics-box2d` skill.
+- **Layer now caches its bitmap + transform** (`bitmap_`, `resolution_`, `occupied_thresh_`,
+  `origin_`, with `GetBitmap()`/`GetResolution()`/`GetOccupiedThresh()`/`GetOrigin()` accessors) so a
+  mutator can read-modify-write the current map. These are populated only for **image-based** layers;
+  `GetBitmap()` is empty for line-segment/empty layers (callers must treat that as "no edits apply").
+  **Callers clone before mutating** — `GetBitmap()` returns a const ref to the live cache.
+- **`World::GetLayer(name)`** (`world.cpp`) resolves a loaded layer by any of its registered names
+  (aliases included); **`World::RepublishLayerOccupancy()`** (a thin wrapper over
+  `PublishDiagnostics()`) re-latches the occupancy overlay so rviz/diagnostics reflect the new map.
+- **The `DynamicMap` world plugin** (`flatland_plugins/src/dynamic_map.cpp`, doc:
+  `flatland_plugins/doc/dynamic_map.md`) is the worked consumer: a YAML-scripted, sim-time-triggered
+  timeline of `fill` / `clear` / `translate` rect ops in world-metric coords, applied on the **fire
+  edge only** (zero per-step cost once all events fired), with a sealed out-of-band JSON manifest
+  (`manifest_path`) of the applied timeline — mirroring the `[[flatland-fault-injection]]` ground-truth
+  contract. World→pixel transform: `col = (wx − origin.x)/res`, `row = rows − (wy − origin.y)/res`,
+  clamped to the image. Tests: `test/dynamic_map_test.{cpp,test}`, world under `test/dynamic_map_tests/`.
+- For **deterministic** runtime geometry, pin `simplify_map` (0 = none) for the run.
 
 ## When you change this
 - Tune or extend `simplify_map`: keep the `0/1/2` arg semantics stable (launch files + tests rely on it).

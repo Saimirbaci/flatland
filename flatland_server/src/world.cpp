@@ -471,6 +471,19 @@ bool World::IsPaused() {
   return service_paused_ || int_marker_manager_.isManipulating();
 }
 
+Layer* World::GetLayer(const std::string& name) const {
+  for (Layer* layer : layers_) {
+    if (layer == nullptr) {
+      continue;
+    }
+    const std::vector<std::string>& names = layer->GetNames();
+    if (std::find(names.begin(), names.end(), name) != names.end()) {
+      return layer;
+    }
+  }
+  return nullptr;
+}
+
 void World::DebugVisualize(bool update_layers) {
   if (update_layers) {
     for (const auto& layer : layers_) {

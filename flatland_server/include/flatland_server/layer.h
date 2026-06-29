@@ -79,6 +79,14 @@ class Layer : public Entity {
                                             /// diagnostic overlay; only built
                                             /// for image-based layers
 
+  /// Current occupancy bitmap (CV_32FC1, values in [0, 1]); kept only for
+  /// image-based layers so runtime mutators (e.g. the DynamicMap world plugin)
+  /// can read-modify-write the map mid-episode. Empty for non-image layers.
+  cv::Mat bitmap_;
+  double resolution_ = 0.0;  ///< meters per pixel of bitmap_ (image layers)
+  double occupied_thresh_ = 0.0;  ///< obstacle threshold used for bitmap_
+  Pose origin_;  ///< world pose of the bitmap lower-left corner (image layers)
+
   /**
    * @brief Constructor for the Layer class for initialization using a image
    * map file
@@ -181,6 +189,48 @@ class Layer : public Entity {
    */
   void BuildOccupancyGrid(const cv::Mat& bitmap, double occupied_thresh,
                           double resolution, const Pose& origin);
+
+  /**
+   * @brief Atomically swap this image-based layer's collision geometry and
+   * occupancy grid to a new bitmap mid-episode, without recreating the Body or
+   * the Layer object (so World ownership, name maps, and any cached Body* /
+   * debug viz handle stay valid).
+   *
+   * Destroys every fixture currently on the static body, re-runs the
+   * contour -> b2ChainShape pipeline (LoadFromBitmap) against @p bitmap,
+   * rebuilds the cached OccupancyGrid (BuildOccupancyGrid) using the stored
+   * layer origin, and caches @p bitmap as the new current bitmap. MUST be
+   * called only between physics steps (e.g. a world plugin's
+   * BeforePhysicsStep), never inside a Box2D contact callback, since destroying
+   * fixtures mid-solve is unsafe.
+   *
+   * @param[in] bitmap New occupancy image (CV_32FC1, values in [0, 1])
+   * @param[in] occupied_thresh Threshold at/above which a pixel is an obstacle
+   * @param[in] resolution Resolution of the bitmap in meters per pixel
+   */
+  void RebuildCollisionFromBitmap(const cv::Mat& bitmap, double occupied_thresh,
+                                  double resolution);
+
+  /**
+   * @return the current occupancy bitmap (CV_32FC1, [0,1]); empty for
+   * non-image layers. Callers clone before mutating.
+   */
+  const cv::Mat& GetBitmap() const { return bitmap_; }
+
+  /**
+   * @return meters per pixel of the current bitmap (0 for non-image layers)
+   */
+  double GetResolution() const { return resolution_; }
+
+  /**
+   * @return obstacle threshold of the current bitmap
+   */
+  double GetOccupiedThresh() const { return occupied_thresh_; }
+
+  /**
+   * @return world pose of the bitmap lower-left corner (image layers)
+   */
+  const Pose& GetOrigin() const { return origin_; }
 
   /**
    * @return whether this layer has a published-able occupancy grid

@@ -1,0 +1,37 @@
+# Test world for the DynamicMap world plugin: a tiny 10x10 m map (black = free)
+# with one shelf obstacle at world x[1,2] y[1,2]. The plugin then mutates the
+# static layer mid-episode on a scripted timeline:
+#   * t = 1.0 s  "corridor closes": fill a vertical wall across x[4,5], full height
+#   * t = 2.0 s  "shelf moves":     translate the shelf from [1,1] to [7,7]
+#
+# Geometry must be deterministic, so simplify_map is pinned to 0 in the .test
+# launch file. The applied timeline is sealed to /tmp for ground truth.
+properties: {}
+layers:
+  - name: "static"
+    map: "map.yaml"
+    color: [0, 1, 0, 1]
+
+models: []
+
+plugins:
+  - type: DynamicMap
+    name: dynamic_map
+    target_layer: "static"
+    manifest_path: "/tmp/flatland_dynamic_map_ground_truth.json"
+    seed_key: "dynamic_map"
+    events:
+      # "A corridor closes": a wall appears across the middle of the map.
+      - id: close_corridor
+        trigger:
+          time_s: 1.0
+        op: fill
+        region: [4.0, 0.0, 1.0, 10.0]   # world [x, y, w, h] in meters
+
+      # "A shelf moves": relocate the corner shelf to the far side.
+      - id: move_shelf
+        trigger:
+          time_s: 2.0
+        op: translate
+        region: [1.0, 1.0, 1.0, 1.0]    # source rect (the existing shelf)
+        dest: [7.0, 7.0]                # destination lower-left corner

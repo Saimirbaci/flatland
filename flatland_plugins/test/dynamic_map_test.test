@@ -1,0 +1,13 @@
+<!--
+Test launchfile for dynamic_map_test
+
+Pins simplify_map=0 so the contour -> chain-loop geometry is deterministic, and
+runs rosmaster so the World can advertise the latched per-layer occupancy
+overlay that DynamicMap re-publishes after each mid-episode edit.
+-->
+<launch>
+  <param name="use_sim_time" value="true"/>
+  <param name="simplify_map" value="0"/>
+  <test pkg="flatland_plugins" type="dynamic_map_test"
+        test-name="dynamic_map_test" time-limit="120.0"/>
+</launch>

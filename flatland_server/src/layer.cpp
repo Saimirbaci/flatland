@@ -83,6 +83,13 @@ Layer::Layer(b2World* physics_world, CollisionFilterRegistry* cfr,
   body_ = new Body(physics_world_, this, name_, color, origin, b2_staticBody,
                    properties);
 
+  // Cache the bitmap + transform so runtime mutators can read-modify-write the
+  // map mid-episode (see RebuildCollisionFromBitmap).
+  bitmap_ = bitmap.clone();
+  resolution_ = resolution;
+  occupied_thresh_ = occupied_thresh;
+  origin_ = origin;
+
   LoadFromBitmap(bitmap, occupied_thresh, resolution);
   BuildOccupancyGrid(bitmap, occupied_thresh, resolution, origin);
 }
@@ -315,6 +322,39 @@ void Layer::LoadFromBitmap(const cv::Mat& bitmap, double occupied_thresh,
   }
 
   ROS_INFO_NAMED("Layer", "added %d line segments", edges_added);
+}
+
+void Layer::RebuildCollisionFromBitmap(const cv::Mat& bitmap,
+                                       double occupied_thresh,
+                                       double resolution) {
+  if (body_ == nullptr || body_->physics_body_ == nullptr) {
+    ROS_WARN_NAMED("Layer",
+                   "RebuildCollisionFromBitmap called on layer \"%s\" with no "
+                   "physics body; ignoring",
+                   name_.c_str());
+    return;
+  }
+
+  // Destroy every existing fixture on the static body. DestroyFixture unlinks
+  // the fixture from the intrusive list, so cache the next pointer first.
+  b2Fixture* fixture = body_->physics_body_->GetFixtureList();
+  while (fixture != nullptr) {
+    b2Fixture* next = fixture->GetNext();
+    body_->physics_body_->DestroyFixture(fixture);
+    fixture = next;
+  }
+
+  // Re-run the contour -> chain-loop pipeline against the new bitmap and
+  // refresh the cached occupancy grid using the unchanged layer origin.
+  LoadFromBitmap(bitmap, occupied_thresh, resolution);
+  BuildOccupancyGrid(bitmap, occupied_thresh, resolution, origin_);
+
+  bitmap_ = bitmap.clone();
+  resolution_ = resolution;
+  occupied_thresh_ = occupied_thresh;
+
+  ROS_INFO_NAMED("Layer", "Rebuilt collision geometry for layer \"%s\"",
+                 name_.c_str());
 }
 
 void Layer::BuildOccupancyGrid(const cv::Mat& bitmap, double occupied_thresh,

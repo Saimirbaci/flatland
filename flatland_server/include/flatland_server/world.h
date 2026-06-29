@@ -229,6 +229,29 @@ class World : public b2ContactListener {
   static World* MakeWorld(const std::string& yaml_path, int seed = -1);
 
   /**
+   * @brief Resolve a loaded layer by name, or nullptr if none matches.
+   *
+   * Matches against every alias the layer was registered under (Layer::names_),
+   * so either a primary or an aliased layer name resolves. Lets a world plugin
+   * (e.g. DynamicMap) target a named layer for runtime geometry edits.
+   *
+   * @param[in] name Layer name to look up
+   * @return Pointer to the layer, or nullptr if no layer carries that name
+   */
+  Layer* GetLayer(const std::string& name) const;
+
+  /**
+   * @brief Re-publish the latched per-layer OccupancyGrid overlays.
+   *
+   * Thin wrapper over PublishDiagnostics() so a plugin that mutated a layer's
+   * geometry at run time can force a fresh latched grid to rviz / the
+   * diagnostic panel without re-implementing the publisher plumbing. Safe to
+   * call between physics steps; never call it from inside the step's contact
+   * callbacks.
+   */
+  void RepublishLayerOccupancy() { PublishDiagnostics(); }
+
+  /**
    * @brief Sample the surface friction multiplier at a world point.
    *
    * Returns a smoothly-varying, bounded multiplier (1.0 = nominal/dry) that

@@ -1,6 +1,6 @@
 ---
 name: flatland-plugin-authoring
-description: Scaffold a new Flatland model or world plugin end-to-end (header, impl, pluginlib export, XML manifest, CMake, tests). Invoke when adding a sensor, drive, or world behavior — the most common change in this repo (recent: imu, gps, diff-drive tf, variable_payload, fault_injector, localization_fault).
+description: Scaffold a new Flatland model or world plugin end-to-end (header, impl, pluginlib export, XML manifest, CMake, tests). Invoke when adding a sensor, drive, or world behavior — the most common change in this repo (recent: imu, gps, diff-drive tf, variable_payload, fault_injector, localization_fault, dynamic_map).
 ---
 
 # Authoring a Flatland plugin
@@ -11,7 +11,10 @@ starting blank: `imu.cpp` (sensor publishing), `gps.cpp`, `laser.cpp` (sensor + 
 (world plugin), `variable_payload.cpp` (drives a body's mass/CoG via `Body::SetMassData`, optional
 command + state topics — see the `flatland-physics-box2d` skill for the mass hook),
 `localization_fault.cpp` (synthetic-sensor model plugin: reads the body's true world pose each step
-and publishes a `geometry_msgs` estimate + a computed `tf` — no Box2D mutation).
+and publishes a `geometry_msgs` estimate + a computed `tf` — no Box2D mutation),
+`dynamic_map.cpp` (world plugin: scripted, sim-time-triggered edits to a static layer's collision
+geometry mid-episode via `Layer::RebuildCollisionFromBitmap` — see the `flatland-map-layers` skill;
+applies edits only on the fire edge, in `BeforePhysicsStep`, never in a contact callback).
 
 If the plugin perturbs/consumes the fault-injection registry (a sensor/drive fault hook, or a new
 fault kind), use the **`flatland-fault-injection`** skill — it covers the registry hook pattern, the
